@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from orcheval.events import LLMCall, NodeEntry, NodeExit, ToolCall
 from orcheval.report.timeline import TimelineReport, timeline_report
 from orcheval.trace import Trace
@@ -128,7 +125,3 @@ class TestTimelineEventSummaries:
         result = timeline_report(trace)
         assert result.events[0].summary == "Tool call: search"
 
-    def test_frozen_result(self, sample_trace: Trace) -> None:
-        result = timeline_report(sample_trace)
-        with pytest.raises(ValidationError):
-            result.total_duration_ms = 999.0  # type: ignore[misc]

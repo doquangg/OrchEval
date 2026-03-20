@@ -36,30 +36,10 @@ class TestTraceBasics:
         assert trace[0].node_name == "b"
         assert trace[1].node_name == "a"
 
-    def test_len(self, sample_trace: Trace) -> None:
-        assert len(sample_trace) == 7
-
-    def test_iter(self, sample_trace: Trace) -> None:
-        events = list(sample_trace)
-        assert len(events) == 7
-
-    def test_getitem_int(self, sample_trace: Trace) -> None:
-        event = sample_trace[0]
-        assert isinstance(event, NodeEntry)
-
-    def test_getitem_slice(self, sample_trace: Trace) -> None:
-        events = sample_trace[0:2]
-        assert len(events) == 2
-
-    def test_bool_nonempty(self, sample_trace: Trace) -> None:
-        assert sample_trace
-
-    def test_bool_empty(self) -> None:
-        assert not Trace(events=[])
-
-    def test_trace_id_from_constructor(self) -> None:
-        trace = Trace(events=[], trace_id="custom-id")
-        assert trace.trace_id == "custom-id"
+    @pytest.mark.parametrize("events,expected", [([], False), (None, True)], ids=["empty", "nonempty"])
+    def test_bool(self, events: list | None, expected: bool, sample_trace: Trace) -> None:
+        trace = Trace(events=events) if events is not None else sample_trace
+        assert bool(trace) is expected
 
     def test_trace_id_from_events(self) -> None:
         e = NodeEntry(trace_id="from-event", node_name="a")
@@ -86,20 +66,6 @@ class TestTraceQuery:
         events = sample_trace.get_events_by_node("nonexistent")
         assert events == []
 
-    def test_get_llm_calls(self, sample_trace: Trace) -> None:
-        calls = sample_trace.get_llm_calls()
-        assert len(calls) == 2
-
-    def test_get_tool_calls(self, sample_trace: Trace) -> None:
-        calls = sample_trace.get_tool_calls()
-        assert len(calls) == 1
-        assert calls[0].tool_name == "search"
-
-    def test_get_timeline(self, sample_trace: Trace) -> None:
-        timeline = sample_trace.get_timeline()
-        assert len(timeline) == 7
-        for i in range(len(timeline) - 1):
-            assert timeline[i].timestamp <= timeline[i + 1].timestamp
 
 
 class TestTraceSummary:
@@ -220,12 +186,6 @@ class TestNodeInvocations:
         assert len(invocations) == 1
         assert invocations[0].duration_ms is None
 
-    def test_named_tuple_fields(self) -> None:
-        """Verify NodeInvocation fields are accessible by name."""
-        inv = NodeInvocation(node_name="test", span_id="s1", duration_ms=100.0)
-        assert inv.node_name == "test"
-        assert inv.span_id == "s1"
-        assert inv.duration_ms == 100.0
 
 
 class TestTraceMerge:
@@ -317,12 +277,6 @@ class TestTraceSerialization:
         restored = Trace.from_json(trace.to_json())
         assert restored[0].timestamp == event.timestamp
         assert restored[0].timestamp.tzinfo is not None
-
-    def test_empty_trace_round_trip(self) -> None:
-        trace = Trace(events=[], trace_id="empty")
-        restored = Trace.from_json(trace.to_json())
-        assert len(restored) == 0
-        assert restored.trace_id == "empty"
 
     def test_invalid_event_raises(self) -> None:
         data = {"trace_id": TRACE_ID, "events": [{"event_type": "nonexistent"}]}

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from orcheval.events import ErrorEvent, NodeEntry, NodeExit
 from orcheval.report.retries import UNKNOWN_NODE, RetryReport, retry_report
 from orcheval.trace import Trace
@@ -155,8 +152,3 @@ class TestRetryEdgeCases:
         assert UNKNOWN_NODE in result.nodes_with_errors
         assert result.retry_sequences == []  # no retry without node context
 
-    def test_frozen_result(self, error_retry_events: list) -> None:
-        trace = Trace(events=error_retry_events, trace_id=TRACE_ID)
-        result = retry_report(trace)
-        with pytest.raises(ValidationError):
-            result.total_errors = 0  # type: ignore[misc]

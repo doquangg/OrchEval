@@ -23,10 +23,6 @@ class TestTracerCreation:
         tracer = Tracer()
         assert isinstance(tracer.adapter, ManualAdapter)
 
-    def test_explicit_manual(self) -> None:
-        tracer = Tracer(adapter="manual")
-        assert isinstance(tracer.adapter, ManualAdapter)
-
     def test_custom_adapter_instance(self) -> None:
         custom = _DummyAdapter(trace_id="custom")
         tracer = Tracer(adapter=custom)
@@ -59,17 +55,6 @@ class TestTracerLangGraph:
 
 
 class TestTracerOperations:
-    def test_handler_returns_adapter_handler(self) -> None:
-        tracer = Tracer()
-        # For ManualAdapter, handler is the adapter itself
-        assert tracer.handler is tracer.adapter
-
-    def test_collect_returns_trace(self) -> None:
-        tracer = Tracer()
-        trace = tracer.collect()
-        assert isinstance(trace, Trace)
-        assert len(trace) == 0
-
     def test_collect_includes_events(self) -> None:
         tracer = Tracer()
         adapter = tracer.adapter

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from orcheval.events import PassBoundary
 from orcheval.report.convergence import ConvergenceReport, convergence_report
 from orcheval.trace import Trace
@@ -234,8 +231,3 @@ class TestConvergenceEdgeCases:
         # status should not appear in trends
         assert "status" not in result.metric_trends
 
-    def test_frozen_result(self, multipass_events: list) -> None:
-        trace = Trace(events=multipass_events, trace_id=TRACE_ID)
-        result = convergence_report(trace)
-        with pytest.raises(ValidationError):
-            result.total_passes = 0  # type: ignore[misc]

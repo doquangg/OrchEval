@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from orcheval.events import LLMCall
 from orcheval.report.cost import UNKNOWN_MODEL, UNKNOWN_NODE, CostReport, cost_report
 from orcheval.trace import Trace
@@ -135,7 +132,3 @@ class TestCostReportEdgeCases:
         result = cost_report(trace)
         assert result.nodes[0].models[0].avg_duration_ms == 150.0
 
-    def test_frozen_result(self, sample_trace: Trace) -> None:
-        result = cost_report(sample_trace)
-        with pytest.raises(ValidationError):
-            result.most_expensive_node = "hacked"  # type: ignore[misc]

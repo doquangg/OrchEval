@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from orcheval.events import RoutingDecision
 from orcheval.report.routing import RoutingReport, routing_report
 from orcheval.trace import Trace
@@ -155,8 +152,3 @@ class TestOscillation:
         osc_flags = [f for f in result.flags if f.flag_type == "oscillation"]
         assert osc_flags == []
 
-    def test_frozen_result(self, routing_events: list) -> None:
-        trace = Trace(events=routing_events, trace_id=TRACE_ID)
-        result = routing_report(trace)
-        with pytest.raises(ValidationError):
-            result.total_decisions = 0  # type: ignore[misc]

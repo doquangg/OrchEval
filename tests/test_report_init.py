@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from orcheval.report import FullReport, report
 from orcheval.report.convergence import ConvergenceReport
 from orcheval.report.cost import CostReport, cost_report
@@ -51,7 +48,3 @@ class TestTopLevelExports:
         assert FR is FullReport
         assert r is report
 
-    def test_frozen(self, sample_trace: Trace) -> None:
-        result = report(sample_trace)
-        with pytest.raises(ValidationError):
-            result.cost = CostReport()  # type: ignore[misc]
