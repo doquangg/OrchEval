@@ -12,6 +12,26 @@ from orcheval.trace import Trace
 from .conftest import TRACE_ID, _ts
 
 
+def _make_passes(exit_values_by_metric: dict[str, list[float]]) -> list[PassBoundary]:
+    """Helper: build PassBoundary events from per-metric exit value lists."""
+    n_passes = max(len(v) for v in exit_values_by_metric.values())
+    events: list[PassBoundary] = []
+    for i in range(n_passes):
+        enter_snapshot = {k: 0 for k in exit_values_by_metric}
+        exit_snapshot = {k: vs[i] for k, vs in exit_values_by_metric.items() if i < len(vs)}
+        events.append(PassBoundary(
+            trace_id=TRACE_ID, timestamp=_ts(i * 10),
+            pass_number=i + 1, direction="enter",
+            metrics_snapshot=enter_snapshot,
+        ))
+        events.append(PassBoundary(
+            trace_id=TRACE_ID, timestamp=_ts(i * 10 + 5),
+            pass_number=i + 1, direction="exit",
+            metrics_snapshot=exit_snapshot,
+        ))
+    return events
+
+
 class TestConvergenceReportBasic:
     def test_empty_trace(self) -> None:
         trace = Trace(events=[], trace_id=TRACE_ID)
@@ -67,19 +87,8 @@ class TestConvergenceDetection:
 
     def test_is_converging_false(self) -> None:
         # Create passes where metrics diverge
-        events = []
-        exit_values = [10, 20, 5]  # abs deltas: 10, 15 -> increasing
-        for i, val in enumerate(exit_values):
-            events.append(PassBoundary(
-                trace_id=TRACE_ID, timestamp=_ts(i * 10),
-                pass_number=i + 1, direction="enter",
-                metrics_snapshot={"score": 0},
-            ))
-            events.append(PassBoundary(
-                trace_id=TRACE_ID, timestamp=_ts(i * 10 + 5),
-                pass_number=i + 1, direction="exit",
-                metrics_snapshot={"score": val},
-            ))
+        events = _make_passes({"score": [10, 20, 5]})
+        # abs deltas: 10, 15 -> increasing -> diverging
         trace = Trace(events=events, trace_id=TRACE_ID)
         result = convergence_report(trace)
         assert result.is_converging is False
@@ -115,6 +124,65 @@ class TestConvergenceDetection:
         trace = Trace(events=events, trace_id=TRACE_ID)
         result = convergence_report(trace)
         # Only 2 exit values = 1 delta, can't determine trend
+        assert result.is_converging is None
+
+
+class TestPerMetricConvergence:
+    """Tests for the per-metric convergence classification."""
+
+    def test_all_converging(self, multipass_events: list) -> None:
+        trace = Trace(events=multipass_events, trace_id=TRACE_ID)
+        result = convergence_report(trace)
+        assert result.is_converging is True
+        assert len(result.per_metric) > 0
+        for mc in result.per_metric:
+            assert mc.status in ("converging", "plateaued")
+
+    def test_mixed_converging_and_diverging(self) -> None:
+        """quality_score converges while violations diverge."""
+        events = _make_passes({
+            "quality_score": [0.63, 0.82, 0.86, 0.9, 0.9],
+            "violations_found": [30, 6, 8, 6, 14],
+        })
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        result = convergence_report(trace)
+        # Overall should be False since not all metrics converge
+        assert result.is_converging is False
+        by_name = {m.metric_name: m for m in result.per_metric}
+        assert by_name["quality_score"].status in ("converging", "plateaued")
+        assert by_name["violations_found"].status in ("diverging", "oscillating")
+
+    def test_plateaued_metric(self) -> None:
+        """Metric that reaches a stable value."""
+        events = _make_passes({"score": [0.5, 0.8, 0.9, 0.9, 0.9]})
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        result = convergence_report(trace)
+        by_name = {m.metric_name: m for m in result.per_metric}
+        assert by_name["score"].status == "plateaued"
+
+    def test_oscillating_metric(self) -> None:
+        """Metric that alternates direction repeatedly."""
+        # 6 values with direction changes: up, down, up, down, up = 4 changes >= 3
+        events = _make_passes({"val": [10, 20, 10, 20, 10, 20]})
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        result = convergence_report(trace)
+        by_name = {m.metric_name: m for m in result.per_metric}
+        assert by_name["val"].status == "oscillating"
+
+    def test_per_metric_has_values_and_deltas(self) -> None:
+        events = _make_passes({"x": [10, 5, 3]})
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        result = convergence_report(trace)
+        mc = result.per_metric[0]
+        assert mc.metric_name == "x"
+        assert mc.values == [10.0, 5.0, 3.0]
+        assert mc.abs_deltas == [5.0, 2.0]
+
+    def test_per_metric_empty_with_fewer_than_3_passes(self) -> None:
+        events = _make_passes({"x": [10, 5]})
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        result = convergence_report(trace)
+        assert result.per_metric == []
         assert result.is_converging is None
 
 

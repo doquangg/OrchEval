@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from orcheval.report.convergence import ConvergenceReport, PassSummary, convergence_report
+from orcheval.report.convergence import ConvergenceReport, MetricConvergence, PassSummary, convergence_report
 from orcheval.report.cost import CostReport, ModelUsage, NodeCostSummary, cost_report
 from orcheval.report.retries import ErrorCluster, RetryReport, RetrySequence, retry_report
 from orcheval.report.routing import RoutingEdge, RoutingFlag, RoutingReport, routing_report
@@ -71,6 +71,7 @@ __all__ = [
     "routing_report",
     # Convergence
     "ConvergenceReport",
+    "MetricConvergence",
     "PassSummary",
     "convergence_report",
     # Retries

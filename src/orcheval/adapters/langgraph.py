@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -17,6 +18,9 @@ from orcheval.events import (
     ToolCall,
 )
 
+# Maximum total size (in chars) for sanitized output captured as decision_context.
+_MAX_CONTEXT_CHARS = 2000
+
 
 def _ensure_langchain() -> None:
     """Raise a helpful ImportError if langchain_core is not installed."""
@@ -27,6 +31,42 @@ def _ensure_langchain() -> None:
             "langchain_core is required for the LangGraph adapter. "
             "Install it with: pip install orcheval[langgraph]"
         ) from None
+
+
+def _sanitize_outputs(outputs: Any) -> dict[str, Any]:
+    """Extract a JSON-safe subset of node outputs for decision_context.
+
+    Skips values that are not JSON-serializable (DataFrames, large objects)
+    and truncates long strings.  Returns an empty dict if *outputs* is not
+    a mapping.
+    """
+    if not isinstance(outputs, dict):
+        return {}
+
+    safe: dict[str, Any] = {}
+    budget = _MAX_CONTEXT_CHARS
+
+    for key, value in outputs.items():
+        if budget <= 0:
+            break
+        if isinstance(value, (bool, int, float, type(None))):
+            safe[key] = value
+            budget -= len(str(value))
+        elif isinstance(value, str):
+            truncated = value[:200] if len(value) > 200 else value
+            safe[key] = truncated
+            budget -= len(truncated)
+        elif isinstance(value, (list, dict)):
+            try:
+                serialized = json.dumps(value, default=str)
+                if len(serialized) <= 500:
+                    safe[key] = value
+                    budget -= len(serialized)
+            except (TypeError, ValueError):
+                pass
+        # Skip non-serializable types (DataFrames, Pydantic models, etc.)
+
+    return safe
 
 
 class LangGraphAdapter(BaseAdapter):
@@ -90,6 +130,9 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
             # Last exited node for routing inference
             self._last_exited_node: str | None = None
 
+            # Last node outputs for populating decision_context
+            self._last_exit_outputs: dict[str, Any] = {}
+
         @property
         def _current_parent_span(self) -> str | None:
             return self._span_stack[-1] if self._span_stack else None
@@ -133,7 +176,6 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     if (
                         self._adapter._infer_routing
                         and self._last_exited_node is not None
-                        and self._last_exited_node != node_name
                     ):
                         routing_event = RoutingDecision(
                             trace_id=self._adapter.trace_id,
@@ -142,9 +184,11 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                             node_name=self._last_exited_node,
                             source_node=self._last_exited_node,
                             target_node=node_name,
+                            decision_context=self._last_exit_outputs,
                             metadata={"inferred": True},
                         )
                         self._adapter._emit(routing_event)
+                        self._last_exit_outputs = {}
 
                     event = NodeEntry(
                         trace_id=self._adapter.trace_id,
@@ -174,9 +218,12 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
 
                 node_name = self._run_to_node.pop(span_id, None)
 
-                # Pop from span stack
-                if span_id in self._span_stack:
-                    self._span_stack.remove(span_id)
+                # Pop from span stack (search from end for correct stack behaviour)
+                try:
+                    idx = len(self._span_stack) - 1 - self._span_stack[::-1].index(span_id)
+                    self._span_stack.pop(idx)
+                except ValueError:
+                    pass
 
                 if node_name is not None:
                     now = datetime.now(timezone.utc)
@@ -194,6 +241,7 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     )
                     self._adapter._emit(event)
                     self._last_exited_node = node_name
+                    self._last_exit_outputs = _sanitize_outputs(outputs)
 
         def on_chain_error(
             self,

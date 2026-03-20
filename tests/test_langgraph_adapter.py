@@ -356,11 +356,14 @@ class TestRoutingInference:
         assert routing[1].source_node == "b"
         assert routing[1].target_node == "c"
 
-    def test_no_routing_on_same_node_reentry(self) -> None:
+    def test_routing_on_same_node_reentry(self) -> None:
+        """Same-node re-entry should still emit a routing decision (self-loop)."""
         adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
         self._run_two_nodes(adapter, node_a="agent", node_b="agent")
         routing = [e for e in adapter.get_events() if isinstance(e, RoutingDecision)]
-        assert len(routing) == 0
+        assert len(routing) == 1
+        assert routing[0].source_node == "agent"
+        assert routing[0].target_node == "agent"
 
     def test_no_routing_on_first_node(self) -> None:
         adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
