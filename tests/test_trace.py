@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
+import pytest
+from pydantic import ValidationError
+
 from orcheval.events import (
+    AgentMessage,
+    ErrorEvent,
     LLMCall,
     NodeEntry,
     NodeExit,
+    PassBoundary,
+    RoutingDecision,
+    ToolCall,
 )
-from orcheval.trace import Trace
+from orcheval.trace import NodeInvocation, Trace
 
 TRACE_ID = "test-trace-container"
 BASE_TIME = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
@@ -149,6 +158,76 @@ class TestTraceSummary:
         assert seq == ["agent", "summarizer"]
 
 
+class TestNodeInvocations:
+    def test_basic(self, sample_trace: Trace) -> None:
+        invocations = sample_trace.node_invocations()
+        assert len(invocations) == 2
+        assert all(isinstance(inv, NodeInvocation) for inv in invocations)
+        assert invocations[0].node_name == "agent"
+        assert invocations[0].duration_ms == 3000.0
+        assert invocations[1].node_name == "summarizer"
+        assert invocations[1].duration_ms == 2000.0
+
+    def test_repeated_node(self) -> None:
+        """Node that executes 3 times returns 3 separate invocations."""
+        events = []
+        for i in range(3):
+            span = f"span-{i}"
+            events.append(
+                NodeEntry(
+                    trace_id=TRACE_ID, span_id=span, node_name="retry_node", timestamp=_ts(i * 2)
+                )
+            )
+            events.append(
+                NodeExit(
+                    trace_id=TRACE_ID,
+                    span_id=span,
+                    node_name="retry_node",
+                    timestamp=_ts(i * 2 + 1),
+                    duration_ms=1000.0,
+                )
+            )
+        trace = Trace(events=events)
+        invocations = trace.node_invocations()
+        assert len(invocations) == 3
+        assert all(inv.node_name == "retry_node" for inv in invocations)
+        span_ids = [inv.span_id for inv in invocations]
+        assert len(set(span_ids)) == 3  # all distinct
+
+    def test_timestamp_fallback(self) -> None:
+        """When duration_ms is None, compute from entry/exit timestamps."""
+        span = "span-ts"
+        events = [
+            NodeEntry(trace_id=TRACE_ID, span_id=span, node_name="a", timestamp=_ts(0)),
+            NodeExit(trace_id=TRACE_ID, span_id=span, node_name="a", timestamp=_ts(2)),
+        ]
+        trace = Trace(events=events)
+        invocations = trace.node_invocations()
+        assert len(invocations) == 1
+        assert invocations[0].duration_ms == 2000.0
+
+    def test_empty_trace(self) -> None:
+        trace = Trace(events=[])
+        assert trace.node_invocations() == []
+
+    def test_orphaned_exit(self) -> None:
+        """NodeExit without matching NodeEntry gets duration=None."""
+        events = [
+            NodeExit(trace_id=TRACE_ID, span_id="orphan", node_name="a", timestamp=_ts(0)),
+        ]
+        trace = Trace(events=events)
+        invocations = trace.node_invocations()
+        assert len(invocations) == 1
+        assert invocations[0].duration_ms is None
+
+    def test_named_tuple_fields(self) -> None:
+        """Verify NodeInvocation fields are accessible by name."""
+        inv = NodeInvocation(node_name="test", span_id="s1", duration_ms=100.0)
+        assert inv.node_name == "test"
+        assert inv.span_id == "s1"
+        assert inv.duration_ms == 100.0
+
+
 class TestTraceMerge:
     def test_merge_two_traces(self) -> None:
         e1 = NodeEntry(trace_id="t1", node_name="a", timestamp=_ts(0))
@@ -171,3 +250,81 @@ class TestTraceMerge:
         t2 = Trace(events=[e2])
         merged = Trace.merge(t1, t2)
         assert merged[0].node_name == "b"
+
+
+class TestTraceSerialization:
+    def test_to_dict_structure(self, sample_trace: Trace) -> None:
+        d = sample_trace.to_dict()
+        assert "trace_id" in d
+        assert "events" in d
+        assert isinstance(d["events"], list)
+        assert len(d["events"]) == 7
+        assert all("event_type" in e for e in d["events"])
+
+    def test_from_dict_round_trip(self, sample_trace: Trace) -> None:
+        d = sample_trace.to_dict()
+        restored = Trace.from_dict(d)
+        assert len(restored) == len(sample_trace)
+        assert restored.trace_id == sample_trace.trace_id
+        for orig, rest in zip(sample_trace, restored, strict=True):
+            assert type(orig) is type(rest)
+            assert orig.span_id == rest.span_id
+
+    def test_to_json_returns_valid_json(self, sample_trace: Trace) -> None:
+        j = sample_trace.to_json()
+        assert isinstance(j, str)
+        parsed = json.loads(j)
+        assert "trace_id" in parsed
+        assert "events" in parsed
+
+    def test_from_json_round_trip(self, sample_trace: Trace) -> None:
+        j = sample_trace.to_json()
+        restored = Trace.from_json(j)
+        assert len(restored) == len(sample_trace)
+        assert restored.trace_id == sample_trace.trace_id
+        for orig, rest in zip(sample_trace, restored, strict=True):
+            assert type(orig) is type(rest)
+
+    def test_all_event_types_round_trip(self) -> None:
+        """Trace with all 8 event types survives JSON round-trip."""
+        events = [
+            NodeEntry(trace_id=TRACE_ID, node_name="n", timestamp=_ts(0)),
+            NodeExit(trace_id=TRACE_ID, node_name="n", timestamp=_ts(1)),
+            LLMCall(trace_id=TRACE_ID, model="gpt-4o", timestamp=_ts(2)),
+            ToolCall(trace_id=TRACE_ID, tool_name="t", timestamp=_ts(3)),
+            RoutingDecision(
+                trace_id=TRACE_ID, source_node="a", target_node="b", timestamp=_ts(4)
+            ),
+            AgentMessage(trace_id=TRACE_ID, sender="a", receiver="b", timestamp=_ts(5)),
+            ErrorEvent(
+                trace_id=TRACE_ID, error_type="E", error_message="msg", timestamp=_ts(6)
+            ),
+            PassBoundary(
+                trace_id=TRACE_ID, pass_number=1, direction="enter", timestamp=_ts(7)
+            ),
+        ]
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        restored = Trace.from_json(trace.to_json())
+        assert len(restored) == 8
+        for orig, rest in zip(trace, restored, strict=True):
+            assert type(orig) is type(rest)
+            assert orig.event_type == rest.event_type
+
+    def test_timestamps_preserved(self) -> None:
+        """Timezone-aware datetimes survive serialization."""
+        event = NodeEntry(trace_id=TRACE_ID, node_name="a", timestamp=_ts(42))
+        trace = Trace(events=[event], trace_id=TRACE_ID)
+        restored = Trace.from_json(trace.to_json())
+        assert restored[0].timestamp == event.timestamp
+        assert restored[0].timestamp.tzinfo is not None
+
+    def test_empty_trace_round_trip(self) -> None:
+        trace = Trace(events=[], trace_id="empty")
+        restored = Trace.from_json(trace.to_json())
+        assert len(restored) == 0
+        assert restored.trace_id == "empty"
+
+    def test_invalid_event_raises(self) -> None:
+        data = {"trace_id": TRACE_ID, "events": [{"event_type": "nonexistent"}]}
+        with pytest.raises(ValidationError):
+            Trace.from_dict(data)

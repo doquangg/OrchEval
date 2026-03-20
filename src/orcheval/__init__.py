@@ -19,7 +19,8 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval.trace import Trace
+from orcheval.report import FullReport, report
+from orcheval.trace import NodeInvocation, Trace
 
 __version__ = "0.1.0"
 
@@ -47,8 +48,11 @@ class Tracer:
         self,
         adapter: str | BaseAdapter = "manual",
         trace_id: str | None = None,
+        *,
+        infer_routing: bool = False,
     ) -> None:
         self._trace_id = trace_id or uuid.uuid4().hex
+        self._infer_routing = infer_routing
 
         if isinstance(adapter, str):
             self._adapter = self._resolve_adapter(adapter)
@@ -63,7 +67,7 @@ class Tracer:
         if name == "langgraph":
             from orcheval.adapters.langgraph import LangGraphAdapter
 
-            return LangGraphAdapter(self._trace_id)
+            return LangGraphAdapter(self._trace_id, infer_routing=self._infer_routing)
         elif name == "manual":
             return ManualAdapter(self._trace_id)
         else:
@@ -100,6 +104,7 @@ __all__ = [
     # Core
     "Tracer",
     "Trace",
+    "NodeInvocation",
     # Events
     "Event",
     "AnyEvent",
@@ -114,4 +119,7 @@ __all__ = [
     # Adapters
     "BaseAdapter",
     "ManualAdapter",
+    # Report
+    "FullReport",
+    "report",
 ]

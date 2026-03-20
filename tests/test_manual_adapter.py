@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from orcheval.adapters.manual import ManualAdapter
 from orcheval.events import (
+    AgentMessage,
     ErrorEvent,
     LLMCall,
     NodeEntry,
     NodeExit,
+    PassBoundary,
+    RoutingDecision,
     ToolCall,
 )
 
@@ -90,6 +93,35 @@ class TestManualAdapterConvenience:
         assert isinstance(event, ErrorEvent)
         assert event.error_type == "ValueError"
         assert event.error_message == "bad input"
+
+    def test_routing_decision(self) -> None:
+        adapter = ManualAdapter(trace_id=TRACE_ID)
+        event = adapter.routing_decision(
+            "router", "target_a", decision_context={"score": 0.9}
+        )
+        assert isinstance(event, RoutingDecision)
+        assert event.source_node == "router"
+        assert event.target_node == "target_a"
+        assert event.decision_context == {"score": 0.9}
+        assert event.trace_id == TRACE_ID
+
+    def test_agent_message(self) -> None:
+        adapter = ManualAdapter(trace_id=TRACE_ID)
+        event = adapter.agent_message("agent_1", "agent_2", content_summary="results")
+        assert isinstance(event, AgentMessage)
+        assert event.sender == "agent_1"
+        assert event.receiver == "agent_2"
+        assert event.content_summary == "results"
+        assert event.trace_id == TRACE_ID
+
+    def test_pass_boundary(self) -> None:
+        adapter = ManualAdapter(trace_id=TRACE_ID)
+        event = adapter.pass_boundary(1, "enter", metrics_snapshot={"count": 50})
+        assert isinstance(event, PassBoundary)
+        assert event.pass_number == 1
+        assert event.direction == "enter"
+        assert event.metrics_snapshot == {"count": 50}
+        assert event.trace_id == TRACE_ID
 
     def test_multiple_events_ordered(self) -> None:
         adapter = ManualAdapter(trace_id=TRACE_ID)

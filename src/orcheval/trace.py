@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar, overload
+import json
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar, overload
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
 from orcheval.events import (
+    EVENT_ADAPTER,
     Event,
     LLMCall,
     NodeEntry,
@@ -16,6 +18,14 @@ from orcheval.events import (
 )
 
 E = TypeVar("E", bound=Event)
+
+
+class NodeInvocation(NamedTuple):
+    """A single node invocation with its span ID and duration."""
+
+    node_name: str
+    span_id: str
+    duration_ms: float | None
 
 
 class Trace:
@@ -132,6 +142,32 @@ class Trace:
 
         return durations
 
+    def node_invocations(self) -> list[NodeInvocation]:
+        """Per-invocation breakdown of node executions.
+
+        Unlike node_durations() which aggregates by node name, this returns
+        one entry per NodeEntry/NodeExit pair. Useful when nodes execute
+        multiple times (retries, loops).
+        """
+        entries: dict[str, NodeEntry] = {}  # span_id -> NodeEntry
+        result: list[NodeInvocation] = []
+
+        for event in self._events:
+            if isinstance(event, NodeEntry):
+                entries[event.span_id] = event
+            elif isinstance(event, NodeExit):
+                if event.duration_ms is not None:
+                    ms: float | None = event.duration_ms
+                elif event.span_id in entries:
+                    entry = entries[event.span_id]
+                    delta = event.timestamp - entry.timestamp
+                    ms = delta.total_seconds() * 1000
+                else:
+                    ms = None
+                result.append(NodeInvocation(event.node_name, event.span_id, ms))
+
+        return result
+
     def node_sequence(self) -> list[str]:
         """Ordered list of node names as they were entered."""
         return [e.node_name for e in self._events if isinstance(e, NodeEntry)]
@@ -145,3 +181,31 @@ class Trace:
         for t in traces:
             all_events.extend(t._events)
         return cls(events=all_events)
+
+    # --- Serialization ---
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the trace to a dict (with Python-native types)."""
+        return {
+            "trace_id": self._trace_id,
+            "events": [e.model_dump() for e in self._events],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Trace:
+        """Deserialize a trace from a dict produced by to_dict()."""
+        trace_id = data["trace_id"]
+        events: list[Event] = [EVENT_ADAPTER.validate_python(e) for e in data["events"]]
+        return cls(events=events, trace_id=trace_id)
+
+    def to_json(self) -> str:
+        """Serialize the trace to a JSON string."""
+        return json.dumps({
+            "trace_id": self._trace_id,
+            "events": [e.model_dump(mode="json") for e in self._events],
+        })
+
+    @classmethod
+    def from_json(cls, data: str) -> Trace:
+        """Deserialize a trace from a JSON string produced by to_json()."""
+        return cls.from_dict(json.loads(data))

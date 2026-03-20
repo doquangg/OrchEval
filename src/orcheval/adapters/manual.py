@@ -6,11 +6,14 @@ from typing import Any
 
 from orcheval.adapters.base import BaseAdapter
 from orcheval.events import (
+    AgentMessage,
     ErrorEvent,
     Event,
     LLMCall,
     NodeEntry,
     NodeExit,
+    PassBoundary,
+    RoutingDecision,
     ToolCall,
 )
 
@@ -70,6 +73,38 @@ class ManualAdapter(BaseAdapter):
             trace_id=self._trace_id,
             error_type=error_type,
             error_message=error_message,
+            **kwargs,
+        )
+        self._emit(event)
+        return event
+
+    def routing_decision(
+        self, source_node: str, target_node: str, **kwargs: Any
+    ) -> RoutingDecision:
+        event = RoutingDecision(
+            trace_id=self._trace_id,
+            source_node=source_node,
+            target_node=target_node,
+            **kwargs,
+        )
+        self._emit(event)
+        return event
+
+    def agent_message(self, sender: str, receiver: str, **kwargs: Any) -> AgentMessage:
+        event = AgentMessage(
+            trace_id=self._trace_id,
+            sender=sender,
+            receiver=receiver,
+            **kwargs,
+        )
+        self._emit(event)
+        return event
+
+    def pass_boundary(self, pass_number: int, direction: str, **kwargs: Any) -> PassBoundary:
+        event = PassBoundary(
+            trace_id=self._trace_id,
+            pass_number=pass_number,
+            direction=direction,
             **kwargs,
         )
         self._emit(event)

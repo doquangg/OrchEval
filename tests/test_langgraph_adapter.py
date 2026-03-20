@@ -19,6 +19,7 @@ from orcheval.events import (  # noqa: E402
     LLMCall,
     NodeEntry,
     NodeExit,
+    RoutingDecision,
     ToolCall,
 )
 
@@ -311,3 +312,82 @@ class TestFullNodeSequence:
         assert node_entries[1].node_name == "summarizer"
         assert llm_calls[0].node_name == "agent"
         assert llm_calls[1].node_name == "summarizer"
+
+
+class TestRoutingInference:
+    """Test opt-in routing decision inference from node transitions."""
+
+    def _run_two_nodes(
+        self, adapter: LangGraphAdapter, node_a: str = "agent", node_b: str = "summarizer"
+    ) -> None:
+        handler = adapter.get_callback_handler()
+        run_a = _make_run_id()
+        handler.on_chain_start({}, {}, run_id=run_a, metadata={"langgraph_node": node_a})
+        handler.on_chain_end({}, run_id=run_a)
+        run_b = _make_run_id()
+        handler.on_chain_start({}, {}, run_id=run_b, metadata={"langgraph_node": node_b})
+        handler.on_chain_end({}, run_id=run_b)
+
+    def test_no_routing_by_default(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        self._run_two_nodes(adapter)
+        routing = [e for e in adapter.get_events() if isinstance(e, RoutingDecision)]
+        assert len(routing) == 0
+
+    def test_infer_routing_emits_decision(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
+        self._run_two_nodes(adapter)
+        routing = [e for e in adapter.get_events() if isinstance(e, RoutingDecision)]
+        assert len(routing) == 1
+        assert routing[0].source_node == "agent"
+        assert routing[0].target_node == "summarizer"
+
+    def test_three_node_sequence(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
+        handler = adapter.get_callback_handler()
+        for name in ["a", "b", "c"]:
+            run_id = _make_run_id()
+            handler.on_chain_start({}, {}, run_id=run_id, metadata={"langgraph_node": name})
+            handler.on_chain_end({}, run_id=run_id)
+        routing = [e for e in adapter.get_events() if isinstance(e, RoutingDecision)]
+        assert len(routing) == 2
+        assert routing[0].source_node == "a"
+        assert routing[0].target_node == "b"
+        assert routing[1].source_node == "b"
+        assert routing[1].target_node == "c"
+
+    def test_no_routing_on_same_node_reentry(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
+        self._run_two_nodes(adapter, node_a="agent", node_b="agent")
+        routing = [e for e in adapter.get_events() if isinstance(e, RoutingDecision)]
+        assert len(routing) == 0
+
+    def test_no_routing_on_first_node(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+        handler.on_chain_start({}, {}, run_id=run_id, metadata={"langgraph_node": "first"})
+        handler.on_chain_end({}, run_id=run_id)
+        routing = [e for e in adapter.get_events() if isinstance(e, RoutingDecision)]
+        assert len(routing) == 0
+
+    def test_metadata_inferred_flag(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
+        self._run_two_nodes(adapter)
+        routing = [e for e in adapter.get_events() if isinstance(e, RoutingDecision)]
+        assert routing[0].metadata["inferred"] is True
+
+    def test_routing_appears_before_node_entry(self) -> None:
+        """RoutingDecision should appear before the NodeEntry it caused."""
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, infer_routing=True)
+        self._run_two_nodes(adapter)
+        events = adapter.get_events()
+        # Find the RoutingDecision and the second NodeEntry
+        routing_idx = next(
+            i for i, e in enumerate(events) if isinstance(e, RoutingDecision)
+        )
+        second_entry_idx = next(
+            i for i, e in enumerate(events)
+            if isinstance(e, NodeEntry) and e.node_name == "summarizer"
+        )
+        assert routing_idx < second_entry_idx

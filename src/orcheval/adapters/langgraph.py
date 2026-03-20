@@ -13,6 +13,7 @@ from orcheval.events import (
     LLMCall,
     NodeEntry,
     NodeExit,
+    RoutingDecision,
     ToolCall,
 )
 
@@ -40,9 +41,10 @@ class LangGraphAdapter(BaseAdapter):
         trace = tracer.collect()
     """
 
-    def __init__(self, trace_id: str) -> None:
+    def __init__(self, trace_id: str, *, infer_routing: bool = False) -> None:
         _ensure_langchain()
         super().__init__(trace_id)
+        self._infer_routing = infer_routing
         self._handler = _create_callback_handler(self)
 
     def get_callback_handler(self) -> Any:
@@ -85,6 +87,9 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
             # Node entry timestamps for duration calculation
             self._node_entry_times: dict[str, datetime] = {}
 
+            # Last exited node for routing inference
+            self._last_exited_node: str | None = None
+
         @property
         def _current_parent_span(self) -> str | None:
             return self._span_stack[-1] if self._span_stack else None
@@ -123,6 +128,23 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
 
                     now = datetime.now(timezone.utc)
                     self._node_entry_times[span_id] = now
+
+                    # Emit inferred routing decision before the NodeEntry
+                    if (
+                        self._adapter._infer_routing
+                        and self._last_exited_node is not None
+                        and self._last_exited_node != node_name
+                    ):
+                        routing_event = RoutingDecision(
+                            trace_id=self._adapter.trace_id,
+                            span_id=self._make_span_id(),
+                            timestamp=now,
+                            node_name=self._last_exited_node,
+                            source_node=self._last_exited_node,
+                            target_node=node_name,
+                            metadata={"inferred": True},
+                        )
+                        self._adapter._emit(routing_event)
 
                     event = NodeEntry(
                         trace_id=self._adapter.trace_id,
@@ -171,6 +193,7 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                         duration_ms=duration_ms,
                     )
                     self._adapter._emit(event)
+                    self._last_exited_node = node_name
 
         def on_chain_error(
             self,
