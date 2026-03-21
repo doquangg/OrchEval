@@ -26,6 +26,9 @@ tracer = Tracer(adapter="langgraph")
 result = graph.invoke(input, config={"callbacks": [tracer.handler]})
 trace = tracer.collect()
 
+# Capture input/output state snapshots on each node
+tracer = Tracer(adapter="langgraph", capture_state=True)
+
 # Inspect what happened
 print(trace.node_sequence())        # ["agent", "summarizer"]
 print(trace.total_cost())           # 0.007
@@ -79,6 +82,48 @@ cost = cost_report(trace)
 routing = routing_report(trace)
 ```
 
+## Inspection
+
+### Text Digest
+
+Generate a compact Markdown summary optimized for feeding to an LLM:
+
+```python
+# Compact overview of the trace
+print(trace.to_digest())
+
+# Focus on specific nodes, collapsing others into a summary line
+print(trace.to_digest(focus_nodes=["agent"]))
+
+# Include full LLM prompt/response content
+print(trace.to_digest(include_llm_content=True))
+
+# Control output size (~4 chars per token)
+print(trace.to_digest(max_chars=8_000))
+```
+
+If you already have a `FullReport`, pass it to avoid recomputation:
+
+```python
+full = report(trace)
+digest = trace.to_digest(reports=full)
+```
+
+### HTML Visualization
+
+Generate a self-contained HTML waterfall visualization with no external dependencies:
+
+```python
+# Write to file and get the HTML string back
+html = trace.to_html("trace.html")
+
+# Or just get the HTML string
+html = trace.to_html()
+```
+
+The visualization includes a swimlane timeline, summary metrics, and click-to-expand
+detail panels showing LLM calls, tool calls, errors, and state diffs for each node.
+
 ## Saving and Loading Traces
 
 ```python
@@ -92,6 +137,16 @@ loaded = Trace.from_json(json_str)
 # Dict form for programmatic use
 d = trace.to_dict()
 loaded = Trace.from_dict(d)
+```
+
+## Merging Traces
+
+Combine multiple traces into a single trace, re-sorted by timestamp:
+
+```python
+from orcheval import Trace
+
+combined = Trace.merge(trace1, trace2, trace3)
 ```
 
 ## Known Limitations
