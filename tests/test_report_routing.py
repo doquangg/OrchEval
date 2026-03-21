@@ -138,7 +138,22 @@ class TestOscillation:
         assert set(osc_flags[0].evidence["targets"]) == {"node_a", "node_b"}
 
     def test_no_oscillation_with_few_decisions(self) -> None:
-        # Only 4 decisions = 3 alternations is possible but we need at least 6
+        # Only 3 decisions — not enough to observe 3 alternations
+        events = [
+            RoutingDecision(
+                trace_id=TRACE_ID, timestamp=_ts(i),
+                source_node="router",
+                target_node="a" if i % 2 == 0 else "b",
+            )
+            for i in range(3)
+        ]
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        result = routing_report(trace)
+        osc_flags = [f for f in result.flags if f.flag_type == "oscillation"]
+        assert osc_flags == []
+
+    def test_oscillation_detected_at_minimum_threshold(self) -> None:
+        # 4 decisions [a, b, a, b] = 3 alternations, exactly at threshold
         events = [
             RoutingDecision(
                 trace_id=TRACE_ID, timestamp=_ts(i),
@@ -150,5 +165,5 @@ class TestOscillation:
         trace = Trace(events=events, trace_id=TRACE_ID)
         result = routing_report(trace)
         osc_flags = [f for f in result.flags if f.flag_type == "oscillation"]
-        assert osc_flags == []
+        assert len(osc_flags) == 1
 

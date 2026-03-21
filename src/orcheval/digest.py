@@ -388,9 +388,7 @@ def _apply_budget(
                 kept.append((name, truncated, priority))
                 budget -= len(truncated)
 
-    # Re-sort by original section order (priority is unique per section)
-    kept.sort(key=lambda s: s[2], reverse=True)
-    # But we want them in document order: title(100), overview(90),
+    # Re-sort into document order: title(100), overview(90),
     # anomalies(80), execution(60), state(40), llm_detail(20)
     kept.sort(key=lambda s: -s[2])
 

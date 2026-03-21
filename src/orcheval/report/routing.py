@@ -155,7 +155,7 @@ def _detect_oscillation(
     target_sequence: list[str],
 ) -> list[RoutingFlag]:
     """Flag when a source alternates between two targets repeatedly."""
-    if len(target_sequence) < MIN_OSCILLATION_ALTERNATIONS * 2:
+    if len(target_sequence) < MIN_OSCILLATION_ALTERNATIONS + 1:
         return []
 
     # Count alternations: consecutive pairs where target changes
