@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -17,9 +16,7 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-
-# Maximum total size (in chars) for sanitized output captured as decision_context.
-_MAX_CONTEXT_CHARS = 2000
+from orcheval.sanitize import compute_state_diff, sanitize_state
 
 
 def _ensure_langchain() -> None:
@@ -36,37 +33,10 @@ def _ensure_langchain() -> None:
 def _sanitize_outputs(outputs: Any) -> dict[str, Any]:
     """Extract a JSON-safe subset of node outputs for decision_context.
 
-    Skips values that are not JSON-serializable (DataFrames, large objects)
-    and truncates long strings.  Returns an empty dict if *outputs* is not
-    a mapping.
+    Delegates to :func:`sanitize_state` with limits matching the original
+    implementation (2000-char budget, 200-char strings, 500-char JSON values).
     """
-    if not isinstance(outputs, dict):
-        return {}
-
-    safe: dict[str, Any] = {}
-    budget = _MAX_CONTEXT_CHARS
-
-    for key, value in outputs.items():
-        if budget <= 0:
-            break
-        if isinstance(value, (bool, int, float, type(None))):
-            safe[key] = value
-            budget -= len(str(value))
-        elif isinstance(value, str):
-            truncated = value[:200] if len(value) > 200 else value
-            safe[key] = truncated
-            budget -= len(truncated)
-        elif isinstance(value, (list, dict)):
-            try:
-                serialized = json.dumps(value, default=str)
-                if len(serialized) <= 500:
-                    safe[key] = value
-                    budget -= len(serialized)
-            except (TypeError, ValueError):
-                pass
-        # Skip non-serializable types (DataFrames, Pydantic models, etc.)
-
-    return safe
+    return sanitize_state(outputs, max_size=2000, max_string=200, max_json_value=500)
 
 
 class LangGraphAdapter(BaseAdapter):
@@ -81,10 +51,17 @@ class LangGraphAdapter(BaseAdapter):
         trace = tracer.collect()
     """
 
-    def __init__(self, trace_id: str, *, infer_routing: bool = False) -> None:
+    def __init__(
+        self,
+        trace_id: str,
+        *,
+        infer_routing: bool = False,
+        capture_state: bool = False,
+    ) -> None:
         _ensure_langchain()
         super().__init__(trace_id)
         self._infer_routing = infer_routing
+        self._capture_state = capture_state
         self._handler = _create_callback_handler(self)
 
     def get_callback_handler(self) -> Any:
@@ -126,6 +103,9 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
 
             # Node entry timestamps for duration calculation
             self._node_entry_times: dict[str, datetime] = {}
+
+            # Sanitized entry states for state diff computation (span_id -> state)
+            self._entry_states: dict[str, dict[str, Any]] = {}
 
             # Last exited node for routing inference
             self._last_exited_node: str | None = None
@@ -190,12 +170,19 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                         self._adapter._emit(routing_event)
                         self._last_exit_outputs = {}
 
+                    # Capture input state when opt-in is enabled
+                    input_state: dict[str, Any] = {}
+                    if self._adapter._capture_state:
+                        input_state = sanitize_state(inputs) if isinstance(inputs, dict) else {}
+                        self._entry_states[span_id] = input_state
+
                     event = NodeEntry(
                         trace_id=self._adapter.trace_id,
                         span_id=span_id,
                         parent_span_id=parent,
                         timestamp=now,
                         node_name=node_name,
+                        input_state=input_state,
                     )
                     self._adapter._emit(event)
                 else:
@@ -232,12 +219,24 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     if entry_time is not None:
                         duration_ms = (now - entry_time).total_seconds() * 1000
 
+                    # Capture output state and compute diff when opt-in is enabled
+                    output_state: dict[str, Any] = {}
+                    state_diff: dict[str, Any] = {}
+                    entry_state = self._entry_states.pop(span_id, {})
+                    if self._adapter._capture_state:
+                        output_state = (
+                            sanitize_state(outputs) if isinstance(outputs, dict) else {}
+                        )
+                        state_diff = compute_state_diff(entry_state, output_state)
+
                     event = NodeExit(
                         trace_id=self._adapter.trace_id,
                         span_id=span_id,
                         timestamp=now,
                         node_name=node_name,
                         duration_ms=duration_ms,
+                        output_state=output_state,
+                        state_diff=state_diff,
                     )
                     self._adapter._emit(event)
                     self._last_exited_node = node_name
@@ -302,6 +301,69 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     "prompts": prompts,
                 }
 
+        def on_chat_model_start(
+            self,
+            serialized: dict[str, Any],
+            messages: list[list[Any]],
+            *,
+            run_id: Any,
+            parent_run_id: Any | None = None,
+            tags: list[str] | None = None,
+            metadata: dict[str, Any] | None = None,
+            **kwargs: Any,
+        ) -> None:
+            """Handle ChatModel start — preserves role structure and extracts system message.
+
+            Mutually exclusive with ``on_llm_start`` per run_id — LangChain
+            dispatches one or the other, never both.
+            """
+            run_id_str = str(run_id)
+
+            model_name = None
+            if serialized:
+                model_name = (
+                    serialized.get("kwargs", {}).get("model_name")
+                    or serialized.get("kwargs", {}).get("model")
+                )
+            if model_name is None and metadata:
+                model_name = metadata.get("ls_model_name")
+
+            with self._lock:
+                pending: dict[str, Any] = {
+                    "start_time": datetime.now(timezone.utc),
+                    "model": model_name,
+                }
+
+                try:
+                    # messages is list[list[BaseMessage]] — use first batch
+                    chat_msgs = messages[0] if messages else []
+                    chat_messages = [
+                        {
+                            "role": getattr(m, "type", "unknown"),
+                            "content": getattr(m, "content", ""),
+                        }
+                        for m in chat_msgs
+                    ]
+                    pending["chat_messages"] = chat_messages
+
+                    # Extract system message
+                    sys_msg = next(
+                        (
+                            m
+                            for m in chat_msgs
+                            if getattr(m, "type", None) == "system"
+                        ),
+                        None,
+                    )
+                    if sys_msg is not None:
+                        pending["system_message"] = getattr(sys_msg, "content", "")
+                except Exception:
+                    # If structured parsing fails, store minimal pending entry
+                    # so on_llm_end can still emit an event
+                    pass
+
+                self._pending_llm[run_id_str] = pending
+
         def on_llm_end(
             self,
             response: LLMResult,
@@ -316,7 +378,6 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                 pending = self._pending_llm.pop(run_id_str, {})
                 start_time = pending.get("start_time")
                 model = pending.get("model")
-                prompts = pending.get("prompts", [])
 
                 now = datetime.now(timezone.utc)
                 duration_ms = None
@@ -345,10 +406,29 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                             "content": getattr(msg, "content", gen.text),
                         }
 
-                # Build input messages
-                input_messages = [{"role": "user", "content": p} for p in prompts]
+                # Build input messages: use structured chat messages if available
+                # (from on_chat_model_start), else fall back to flat prompts
+                # (from on_llm_start).
+                chat_messages = pending.get("chat_messages")
+                if chat_messages is not None:
+                    input_messages = chat_messages
+                    # Build prompt_summary from first user message content
+                    first_content = next(
+                        (
+                            m.get("content", "")
+                            for m in chat_messages
+                            if m.get("role") != "system"
+                        ),
+                        "",
+                    )
+                    prompt_summary = first_content[:200] if first_content else None
+                else:
+                    prompts = pending.get("prompts", [])
+                    input_messages = [{"role": "user", "content": p} for p in prompts]
+                    prompt_summary = prompts[0][:200] if prompts else None
 
-                prompt_summary = prompts[0][:200] if prompts else None
+                # Extract system message (only available via on_chat_model_start)
+                system_message = pending.get("system_message")
 
                 span_id = self._make_span_id()
                 event = LLMCall(
@@ -365,6 +445,7 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     duration_ms=duration_ms,
                     prompt_summary=prompt_summary,
                     response_summary=response_summary,
+                    system_message=system_message,
                 )
                 self._adapter._emit(event)
 

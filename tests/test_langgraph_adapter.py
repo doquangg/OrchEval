@@ -6,6 +6,7 @@ These tests require langchain_core to be installed. They are skipped otherwise.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import pytest
 
@@ -312,6 +313,224 @@ class TestFullNodeSequence:
         assert node_entries[1].node_name == "summarizer"
         assert llm_calls[0].node_name == "agent"
         assert llm_calls[1].node_name == "summarizer"
+
+
+class TestStateCapture:
+    """Test opt-in state capture at node boundaries."""
+
+    def test_state_capture_off_by_default(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        handler.on_chain_start(
+            {}, {"key": "value"}, run_id=run_id, metadata={"langgraph_node": "agent"}
+        )
+        handler.on_chain_end({"result": 42}, run_id=run_id)
+
+        events = adapter.get_events()
+        entry = [e for e in events if isinstance(e, NodeEntry)][0]
+        exit_ = [e for e in events if isinstance(e, NodeExit)][0]
+        assert entry.input_state == {}
+        assert exit_.output_state == {}
+        assert exit_.state_diff == {}
+
+    def test_state_capture_on(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, capture_state=True)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        handler.on_chain_start(
+            {}, {"key": "value"}, run_id=run_id, metadata={"langgraph_node": "agent"}
+        )
+        handler.on_chain_end({"key": "changed", "new_key": 1}, run_id=run_id)
+
+        events = adapter.get_events()
+        entry = [e for e in events if isinstance(e, NodeEntry)][0]
+        exit_ = [e for e in events if isinstance(e, NodeExit)][0]
+        assert entry.input_state == {"key": "value"}
+        assert exit_.output_state == {"key": "changed", "new_key": 1}
+        assert exit_.state_diff["added"] == ["new_key"]
+        assert exit_.state_diff["modified"] == ["key"]
+        assert exit_.state_diff["removed"] == []
+
+    def test_state_diff_computed(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, capture_state=True)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        handler.on_chain_start(
+            {}, {"a": 1, "b": 2, "c": 3}, run_id=run_id, metadata={"langgraph_node": "node"}
+        )
+        handler.on_chain_end({"a": 1, "c": 99, "d": 4}, run_id=run_id)
+
+        events = adapter.get_events()
+        exit_ = [e for e in events if isinstance(e, NodeExit)][0]
+        assert exit_.state_diff["added"] == ["d"]
+        assert exit_.state_diff["removed"] == ["b"]
+        assert exit_.state_diff["modified"] == ["c"]
+
+    def test_non_dict_inputs_handled(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, capture_state=True)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        handler.on_chain_start(
+            {}, "not a dict", run_id=run_id, metadata={"langgraph_node": "agent"}
+        )
+        handler.on_chain_end("also not a dict", run_id=run_id)
+
+        events = adapter.get_events()
+        entry = [e for e in events if isinstance(e, NodeEntry)][0]
+        exit_ = [e for e in events if isinstance(e, NodeExit)][0]
+        assert entry.input_state == {}
+        assert exit_.output_state == {}
+
+    def test_error_path_cleans_up_entry_states(self) -> None:
+        """on_chain_error delegates to on_chain_end, which pops _entry_states."""
+        adapter = LangGraphAdapter(trace_id=TRACE_ID, capture_state=True)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        handler.on_chain_start(
+            {}, {"key": "value"}, run_id=run_id, metadata={"langgraph_node": "agent"}
+        )
+        handler.on_chain_error(ValueError("boom"), run_id=run_id)
+
+        # Verify no leak: _entry_states should be empty
+        assert handler._entry_states == {}
+
+    def test_capture_state_threaded_through_tracer(self) -> None:
+        from orcheval import Tracer
+
+        tracer = Tracer(adapter="langgraph", capture_state=True)
+        assert tracer.adapter._capture_state is True  # type: ignore[union-attr]
+
+    def test_capture_state_default_through_tracer(self) -> None:
+        from orcheval import Tracer
+
+        tracer = Tracer(adapter="langgraph")
+        assert tracer.adapter._capture_state is False  # type: ignore[union-attr]
+
+
+class TestChatModelStart:
+    """Test on_chat_model_start for system message extraction and role preservation."""
+
+    def _make_base_messages(
+        self,
+        *,
+        system: str | None = None,
+        user: str = "Hello",
+        assistant: str | None = None,
+    ) -> list[list[Any]]:
+        """Create mock BaseMessage-like objects for on_chat_model_start."""
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+        msgs: list[Any] = []
+        if system is not None:
+            msgs.append(SystemMessage(content=system))
+        msgs.append(HumanMessage(content=user))
+        if assistant is not None:
+            msgs.append(AIMessage(content=assistant))
+        return [msgs]
+
+    def test_system_message_extracted(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        messages = self._make_base_messages(
+            system="You are a helpful assistant.",
+            user="What is 2+2?",
+        )
+        handler.on_chat_model_start(
+            {"kwargs": {"model_name": "gpt-4o"}}, messages, run_id=run_id
+        )
+        handler.on_llm_end(_make_llm_result("4"), run_id=run_id)
+
+        events = adapter.get_events()
+        assert len(events) == 1
+        llm = events[0]
+        assert isinstance(llm, LLMCall)
+        assert llm.system_message == "You are a helpful assistant."
+        assert llm.model == "gpt-4o"
+
+    def test_role_structure_preserved(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        messages = self._make_base_messages(
+            system="Be helpful",
+            user="Hi",
+        )
+        handler.on_chat_model_start({}, messages, run_id=run_id)
+        handler.on_llm_end(_make_llm_result("Hello"), run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        # Should have role-tagged messages, not all "user"
+        roles = [m["role"] for m in llm.input_messages]
+        assert "system" in roles
+        assert "human" in roles
+
+    def test_no_system_message_when_absent(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        messages = self._make_base_messages(user="Just a user message")
+        handler.on_chat_model_start({}, messages, run_id=run_id)
+        handler.on_llm_end(_make_llm_result("Response"), run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        assert llm.system_message is None
+
+    def test_fallback_to_on_llm_start(self) -> None:
+        """When only on_llm_start fires, messages use flat 'user' role."""
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        handler.on_llm_start({}, ["What is 2+2?"], run_id=run_id)
+        handler.on_llm_end(_make_llm_result("4"), run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        assert llm.system_message is None
+        assert llm.input_messages == [{"role": "user", "content": "What is 2+2?"}]
+
+    def test_model_from_metadata(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        messages = self._make_base_messages(user="Hi")
+        handler.on_chat_model_start(
+            {}, messages, run_id=run_id, metadata={"ls_model_name": "claude-3.5-sonnet"}
+        )
+        handler.on_llm_end(_make_llm_result("Hi"), run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        assert llm.model == "claude-3.5-sonnet"
+
+    def test_prompt_summary_from_chat_messages(self) -> None:
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        messages = self._make_base_messages(
+            system="System prompt", user="User question here"
+        )
+        handler.on_chat_model_start({}, messages, run_id=run_id)
+        handler.on_llm_end(_make_llm_result("Answer"), run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        # prompt_summary should come from the first non-system message
+        assert llm.prompt_summary == "User question here"
 
 
 class TestRoutingInference:

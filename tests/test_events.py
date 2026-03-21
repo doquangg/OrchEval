@@ -67,6 +67,98 @@ class TestEventDefaults:
 
 
 
+class TestNewFields:
+    """Test Tier 1 field additions."""
+
+    def test_node_entry_input_state_default(self) -> None:
+        e = NodeEntry(trace_id=TRACE_ID, node_name="agent")
+        assert e.input_state == {}
+
+    def test_node_entry_input_state_with_value(self) -> None:
+        e = NodeEntry(trace_id=TRACE_ID, node_name="agent", input_state={"key": "val"})
+        assert e.input_state == {"key": "val"}
+
+    def test_node_exit_output_state_default(self) -> None:
+        e = NodeExit(trace_id=TRACE_ID, node_name="agent")
+        assert e.output_state == {}
+        assert e.state_diff == {}
+
+    def test_node_exit_output_state_with_value(self) -> None:
+        e = NodeExit(
+            trace_id=TRACE_ID,
+            node_name="agent",
+            output_state={"result": 42},
+            state_diff={"added": ["result"], "removed": [], "modified": []},
+        )
+        assert e.output_state == {"result": 42}
+        assert e.state_diff["added"] == ["result"]
+
+    def test_llm_call_system_message_default(self) -> None:
+        e = LLMCall(trace_id=TRACE_ID)
+        assert e.system_message is None
+
+    def test_llm_call_system_message_with_value(self) -> None:
+        e = LLMCall(trace_id=TRACE_ID, system_message="You are a helpful assistant.")
+        assert e.system_message == "You are a helpful assistant."
+
+    def test_new_fields_round_trip(self) -> None:
+        """New fields survive model_dump/validate round-trip."""
+        entry = NodeEntry(
+            trace_id=TRACE_ID, node_name="n", input_state={"x": 1}
+        )
+        data = entry.model_dump()
+        restored = EVENT_ADAPTER.validate_python(data)
+        assert isinstance(restored, NodeEntry)
+        assert restored.input_state == {"x": 1}
+
+        exit_ = NodeExit(
+            trace_id=TRACE_ID,
+            node_name="n",
+            output_state={"y": 2},
+            state_diff={"added": ["y"], "removed": [], "modified": []},
+        )
+        data = exit_.model_dump()
+        restored = EVENT_ADAPTER.validate_python(data)
+        assert isinstance(restored, NodeExit)
+        assert restored.output_state == {"y": 2}
+        assert restored.state_diff["added"] == ["y"]
+
+        llm = LLMCall(trace_id=TRACE_ID, system_message="Be helpful")
+        data = llm.model_dump()
+        restored = EVENT_ADAPTER.validate_python(data)
+        assert isinstance(restored, LLMCall)
+        assert restored.system_message == "Be helpful"
+
+    def test_backward_compat_missing_new_fields(self) -> None:
+        """Old JSON without new fields deserializes with defaults."""
+        old_entry = {
+            "event_type": "node_entry",
+            "trace_id": TRACE_ID,
+            "node_name": "agent",
+        }
+        restored = EVENT_ADAPTER.validate_python(old_entry)
+        assert isinstance(restored, NodeEntry)
+        assert restored.input_state == {}
+
+        old_exit = {
+            "event_type": "node_exit",
+            "trace_id": TRACE_ID,
+            "node_name": "agent",
+        }
+        restored = EVENT_ADAPTER.validate_python(old_exit)
+        assert isinstance(restored, NodeExit)
+        assert restored.output_state == {}
+        assert restored.state_diff == {}
+
+        old_llm = {
+            "event_type": "llm_call",
+            "trace_id": TRACE_ID,
+        }
+        restored = EVENT_ADAPTER.validate_python(old_llm)
+        assert isinstance(restored, LLMCall)
+        assert restored.system_message is None
+
+
 class TestEventFrozen:
     """Test that events are immutable after creation."""
 

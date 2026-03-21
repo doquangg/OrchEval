@@ -50,9 +50,11 @@ class Tracer:
         trace_id: str | None = None,
         *,
         infer_routing: bool = False,
+        capture_state: bool = False,
     ) -> None:
         self._trace_id = trace_id or uuid.uuid4().hex
         self._infer_routing = infer_routing
+        self._capture_state = capture_state
 
         if isinstance(adapter, str):
             self._adapter = self._resolve_adapter(adapter)
@@ -67,7 +69,11 @@ class Tracer:
         if name == "langgraph":
             from orcheval.adapters.langgraph import LangGraphAdapter
 
-            return LangGraphAdapter(self._trace_id, infer_routing=self._infer_routing)
+            return LangGraphAdapter(
+                self._trace_id,
+                infer_routing=self._infer_routing,
+                capture_state=self._capture_state,
+            )
         elif name == "manual":
             return ManualAdapter(self._trace_id)
         else:

@@ -32,6 +32,7 @@ class NodeEntry(Event):
 
     event_type: Literal["node_entry"] = "node_entry"
     node_name: str
+    input_state: dict[str, Any] = Field(default_factory=dict)
 
 
 class NodeExit(Event):
@@ -40,6 +41,8 @@ class NodeExit(Event):
     event_type: Literal["node_exit"] = "node_exit"
     node_name: str
     duration_ms: float | None = None
+    output_state: dict[str, Any] = Field(default_factory=dict)
+    state_diff: dict[str, Any] = Field(default_factory=dict)
 
 
 class LLMCall(Event):
@@ -55,6 +58,7 @@ class LLMCall(Event):
     duration_ms: float | None = None
     prompt_summary: str | None = None
     response_summary: str | None = None
+    system_message: str | None = None
 
 
 class ToolCall(Event):

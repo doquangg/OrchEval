@@ -53,6 +53,16 @@ class TestTracerLangGraph:
         from orcheval.adapters.langgraph import LangGraphAdapter
         assert isinstance(tracer.adapter, LangGraphAdapter)
 
+    def test_capture_state_passed_to_langgraph(self) -> None:
+        pytest.importorskip("langchain_core")
+        tracer = Tracer(adapter="langgraph", capture_state=True)
+        assert tracer.adapter._capture_state is True  # type: ignore[union-attr]
+
+    def test_capture_state_default(self) -> None:
+        pytest.importorskip("langchain_core")
+        tracer = Tracer(adapter="langgraph")
+        assert tracer.adapter._capture_state is False  # type: ignore[union-attr]
+
 
 class TestTracerOperations:
     def test_collect_includes_events(self) -> None:

@@ -278,6 +278,85 @@ class TestTraceSerialization:
         assert restored[0].timestamp == event.timestamp
         assert restored[0].timestamp.tzinfo is not None
 
+    def test_new_fields_round_trip(self) -> None:
+        """New Tier 1 fields survive JSON round-trip."""
+        events = [
+            NodeEntry(
+                trace_id=TRACE_ID,
+                node_name="agent",
+                timestamp=_ts(0),
+                input_state={"key": "value", "nested": {"a": 1}},
+            ),
+            NodeExit(
+                trace_id=TRACE_ID,
+                node_name="agent",
+                timestamp=_ts(1),
+                output_state={"key": "changed"},
+                state_diff={"added": [], "removed": [], "modified": ["key"]},
+            ),
+            LLMCall(
+                trace_id=TRACE_ID,
+                timestamp=_ts(2),
+                system_message="You are a helpful assistant.",
+            ),
+        ]
+        trace = Trace(events=events, trace_id=TRACE_ID)
+        restored = Trace.from_json(trace.to_json())
+
+        entry = restored[0]
+        assert isinstance(entry, NodeEntry)
+        assert entry.input_state == {"key": "value", "nested": {"a": 1}}
+
+        exit_ = restored[1]
+        assert isinstance(exit_, NodeExit)
+        assert exit_.output_state == {"key": "changed"}
+        assert exit_.state_diff["modified"] == ["key"]
+
+        llm = restored[2]
+        assert isinstance(llm, LLMCall)
+        assert llm.system_message == "You are a helpful assistant."
+
+    def test_backward_compat_pre_tier1_json(self) -> None:
+        """Pre-Tier-1 JSON (no new fields) deserializes with defaults."""
+        old_json = json.dumps({
+            "trace_id": TRACE_ID,
+            "events": [
+                {
+                    "event_type": "node_entry",
+                    "trace_id": TRACE_ID,
+                    "node_name": "agent",
+                    "timestamp": _ts(0).isoformat(),
+                },
+                {
+                    "event_type": "node_exit",
+                    "trace_id": TRACE_ID,
+                    "node_name": "agent",
+                    "timestamp": _ts(1).isoformat(),
+                    "duration_ms": 1000.0,
+                },
+                {
+                    "event_type": "llm_call",
+                    "trace_id": TRACE_ID,
+                    "timestamp": _ts(2).isoformat(),
+                },
+            ],
+        })
+        trace = Trace.from_json(old_json)
+        assert len(trace) == 3
+
+        entry = trace[0]
+        assert isinstance(entry, NodeEntry)
+        assert entry.input_state == {}
+
+        exit_ = trace[1]
+        assert isinstance(exit_, NodeExit)
+        assert exit_.output_state == {}
+        assert exit_.state_diff == {}
+
+        llm = trace[2]
+        assert isinstance(llm, LLMCall)
+        assert llm.system_message is None
+
     def test_invalid_event_raises(self) -> None:
         data = {"trace_id": TRACE_ID, "events": [{"event_type": "nonexistent"}]}
         with pytest.raises(ValidationError):
