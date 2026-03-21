@@ -209,3 +209,55 @@ class Trace:
     def from_json(cls, data: str) -> Trace:
         """Deserialize a trace from a JSON string produced by to_json()."""
         return cls.from_dict(json.loads(data))
+
+    # --- Presentation ---
+
+    def to_digest(
+        self,
+        *,
+        include_llm_content: bool = False,
+        focus_nodes: list[str] | None = None,
+        reports: Any = None,
+        max_chars: int = 16_000,
+    ) -> str:
+        """Produce a compact narrative text summary optimized for LLM analysis.
+
+        Args:
+            include_llm_content: Include full LLM prompt/response content.
+            focus_nodes: Only show these nodes in detail; collapse others.
+            reports: Pre-computed ``FullReport`` to avoid redundant computation.
+            max_chars: Character budget (~4 chars per token).
+        """
+        from orcheval.digest import build_digest
+
+        return build_digest(
+            self,
+            include_llm_content=include_llm_content,
+            focus_nodes=focus_nodes,
+            reports=reports,
+            max_chars=max_chars,
+        )
+
+    def to_html(
+        self,
+        path: str | None = None,
+        *,
+        reports: Any = None,
+    ) -> str:
+        """Produce a self-contained HTML waterfall visualization.
+
+        If *path* is given, also writes the HTML to that file.
+        Always returns the HTML string.
+
+        Args:
+            path: Optional file path to write the HTML to.
+            reports: Pre-computed ``FullReport`` to avoid redundant computation.
+        """
+        from orcheval.visualization import build_html
+
+        html = build_html(self, reports=reports)
+        if path is not None:
+            from pathlib import Path as P
+
+            P(path).write_text(html, encoding="utf-8")
+        return html

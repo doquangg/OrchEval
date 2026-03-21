@@ -319,3 +319,41 @@ def multi_model_events() -> list[NodeEntry | NodeExit | LLMCall]:
         NodeExit(trace_id=TRACE_ID, span_id=span_b, timestamp=_ts(6), node_name="executor",
                  duration_ms=2000.0),
     ]
+
+
+@pytest.fixture
+def stateful_trace() -> Trace:
+    """Trace with state capture data for testing state-aware rendering."""
+    span_a = "span-state-a"
+    span_b = "span-state-b"
+
+    return Trace(events=[
+        NodeEntry(
+            trace_id=TRACE_ID, span_id=span_a, timestamp=_ts(0),
+            node_name="preprocessor",
+            input_state={"data": [1, 2, 3], "config": {"mode": "fast"}},
+        ),
+        NodeExit(
+            trace_id=TRACE_ID, span_id=span_a, timestamp=_ts(2),
+            node_name="preprocessor", duration_ms=2000.0,
+            output_state={"data": [1, 2, 3], "config": {"mode": "fast"}, "result": "done"},
+            state_diff={"added": ["result"], "removed": [], "modified": []},
+        ),
+        NodeEntry(
+            trace_id=TRACE_ID, span_id=span_b, timestamp=_ts(3),
+            node_name="analyzer",
+            input_state={"data": [1, 2, 3], "result": "done"},
+        ),
+        LLMCall(
+            trace_id=TRACE_ID, span_id="span-llm-state", parent_span_id=span_b,
+            timestamp=_ts(4), node_name="analyzer",
+            model="gpt-4o", input_tokens=100, output_tokens=50,
+            cost=0.003, duration_ms=500.0,
+        ),
+        NodeExit(
+            trace_id=TRACE_ID, span_id=span_b, timestamp=_ts(5),
+            node_name="analyzer", duration_ms=2000.0,
+            output_state={"data": [1, 2, 3], "result": "analyzed", "score": 0.95},
+            state_diff={"added": ["score"], "removed": [], "modified": ["result"]},
+        ),
+    ], trace_id=TRACE_ID)
