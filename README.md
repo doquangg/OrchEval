@@ -3,7 +3,7 @@
 Evaluate, profile, and debug multi-agent LLM systems.
 
 OrchEval captures structured trace events from multi-agent orchestrations and provides
-query, analysis, and assertion tools for understanding system-level behavior — routing
+query and analysis tools for understanding system-level behavior — routing
 correctness, inter-agent data flow, cost/latency per agent, and convergence across passes.
 
 ## Installation
