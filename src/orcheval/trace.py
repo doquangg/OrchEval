@@ -231,7 +231,7 @@ class Trace:
         inferred from consecutive node transitions.  Nodes show invocation
         counts and error nodes are styled distinctly.
         """
-        from orcheval.mermaid import build_mermaid
+        from orcheval.export.mermaid import build_mermaid
 
         return build_mermaid(self)
 
@@ -241,7 +241,7 @@ class Trace:
         Returns a ``pandas.DataFrame``.  Raises ``ImportError`` with an
         install hint if pandas is not available.
         """
-        from orcheval.dataframe import build_dataframe
+        from orcheval.export.dataframe import build_dataframe
 
         return build_dataframe(self)
 
@@ -263,7 +263,7 @@ class Trace:
             reports: Pre-computed ``FullReport`` to avoid redundant computation.
             max_chars: Character budget (~4 chars per token).
         """
-        from orcheval.digest import build_digest
+        from orcheval.export.digest import build_digest
 
         return build_digest(
             self,
@@ -288,7 +288,7 @@ class Trace:
             path: Optional file path to write the HTML to.
             reports: Pre-computed ``FullReport`` to avoid redundant computation.
         """
-        from orcheval.visualization import build_html
+        from orcheval.export.visualization import build_html
 
         html = build_html(self, reports=reports)
         if path is not None:

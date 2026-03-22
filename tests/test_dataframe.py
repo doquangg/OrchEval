@@ -9,7 +9,7 @@ import pytest
 
 pd = pytest.importorskip("pandas")
 
-from orcheval.dataframe import ALL_COLUMNS  # noqa: E402
+from orcheval.export.dataframe import ALL_COLUMNS  # noqa: E402
 from orcheval.events import (  # noqa: E402
     AgentMessage,
     ErrorEvent,
@@ -229,7 +229,7 @@ class TestDataFrameEdgeCases:
             # Force re-import to trigger the ImportError path
             import importlib
 
-            import orcheval.dataframe as df_mod
+            import orcheval.export.dataframe as df_mod
 
             importlib.reload(df_mod)
             trace = Trace(events=[], trace_id=TRACE_ID)
