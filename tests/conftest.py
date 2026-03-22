@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from orcheval.events import (
+    AgentMessage,
     ErrorEvent,
     LLMCall,
     NodeEntry,
@@ -357,3 +358,121 @@ def stateful_trace() -> Trace:
             state_diff={"added": ["score"], "removed": [], "modified": ["result"]},
         ),
     ], trace_id=TRACE_ID)
+
+
+@pytest.fixture
+def llm_pattern_events() -> list[NodeEntry | NodeExit | LLMCall | ToolCall]:
+    """Events exercising all five LLM pattern detectors.
+
+    - agent: 2 invocations with prompt growth (100 -> 200 tokens, 100% growth),
+      identical response_summary but different prompt_summary (repeated output),
+      and redundant tool calls in invocation 2.
+    - planner: 2 LLM calls with different system_message (system message variance).
+    - formatter: 1 invocation with LLM output but empty state_diff (output not utilized).
+    """
+    span_agent_1 = "span-pat-agent-1"
+    span_agent_2 = "span-pat-agent-2"
+    span_planner = "span-pat-planner"
+    span_formatter = "span-pat-formatter"
+
+    return [
+        # --- agent invocation 1 ---
+        NodeEntry(
+            trace_id=TRACE_ID, span_id=span_agent_1, timestamp=_ts(0),
+            node_name="agent",
+        ),
+        LLMCall(
+            trace_id=TRACE_ID, span_id="span-pat-llm-a1", parent_span_id=span_agent_1,
+            timestamp=_ts(1), node_name="agent",
+            model="gpt-4o", input_tokens=100, output_tokens=50,
+            cost=0.003, duration_ms=500.0,
+            prompt_summary="Analyze the dataset",
+            response_summary="I'll use the search tool",
+            input_messages=[{"role": "user", "content": "Analyze the dataset"}],
+            output_message={"role": "ai", "content": "I'll use the search tool"},
+        ),
+        NodeExit(
+            trace_id=TRACE_ID, span_id=span_agent_1, timestamp=_ts(2),
+            node_name="agent", duration_ms=2000.0,
+        ),
+        # --- agent invocation 2 (retry) ---
+        NodeEntry(
+            trace_id=TRACE_ID, span_id=span_agent_2, timestamp=_ts(3),
+            node_name="agent",
+        ),
+        LLMCall(
+            trace_id=TRACE_ID, span_id="span-pat-llm-a2", parent_span_id=span_agent_2,
+            timestamp=_ts(4), node_name="agent",
+            model="gpt-4o", input_tokens=200, output_tokens=50,
+            cost=0.005, duration_ms=600.0,
+            prompt_summary="Analyze the dataset with error context appended",
+            response_summary="I'll use the search tool",
+            input_messages=[{"role": "user", "content": "Analyze the dataset with error context"}],
+            output_message={"role": "ai", "content": "I'll use the search tool"},
+        ),
+        # Redundant tool calls in invocation 2
+        ToolCall(
+            trace_id=TRACE_ID, span_id="span-pat-tool-a2a", parent_span_id=span_agent_2,
+            timestamp=_ts(4.5), node_name="agent",
+            tool_name="search", tool_input={"query": "test data"},
+            tool_output="Found 3 results", duration_ms=200.0,
+        ),
+        ToolCall(
+            trace_id=TRACE_ID, span_id="span-pat-tool-a2b", parent_span_id=span_agent_2,
+            timestamp=_ts(4.7), node_name="agent",
+            tool_name="search", tool_input={"query": "test data"},
+            tool_output="Found 3 results", duration_ms=200.0,
+        ),
+        NodeExit(
+            trace_id=TRACE_ID, span_id=span_agent_2, timestamp=_ts(5),
+            node_name="agent", duration_ms=2000.0,
+        ),
+        # --- planner: system message variance ---
+        NodeEntry(
+            trace_id=TRACE_ID, span_id=span_planner, timestamp=_ts(6),
+            node_name="planner",
+        ),
+        LLMCall(
+            trace_id=TRACE_ID, span_id="span-pat-llm-p1", parent_span_id=span_planner,
+            timestamp=_ts(7), node_name="planner",
+            model="gpt-4o", input_tokens=150, output_tokens=80,
+            cost=0.004, duration_ms=700.0,
+            system_message="You are a planning agent.",
+        ),
+        LLMCall(
+            trace_id=TRACE_ID, span_id="span-pat-llm-p2", parent_span_id=span_planner,
+            timestamp=_ts(8), node_name="planner",
+            model="gpt-4o", input_tokens=150, output_tokens=80,
+            cost=0.004, duration_ms=700.0,
+            system_message="You are an expert planner. Be concise.",
+        ),
+        NodeExit(
+            trace_id=TRACE_ID, span_id=span_planner, timestamp=_ts(9),
+            node_name="planner", duration_ms=3000.0,
+        ),
+        # --- formatter: output not utilized ---
+        NodeEntry(
+            trace_id=TRACE_ID, span_id=span_formatter, timestamp=_ts(10),
+            node_name="formatter",
+            input_state={"data": [1, 2, 3]},
+        ),
+        LLMCall(
+            trace_id=TRACE_ID, span_id="span-pat-llm-f1", parent_span_id=span_formatter,
+            timestamp=_ts(11), node_name="formatter",
+            model="gpt-4o", input_tokens=80, output_tokens=40,
+            cost=0.002, duration_ms=400.0,
+            response_summary="Formatted output ready",
+            output_message={"role": "ai", "content": "Formatted output ready"},
+        ),
+        NodeExit(
+            trace_id=TRACE_ID, span_id=span_formatter, timestamp=_ts(12),
+            node_name="formatter", duration_ms=2000.0,
+            output_state={"data": [1, 2, 3]},
+            state_diff={"added": [], "removed": [], "modified": []},
+        ),
+    ]
+
+
+@pytest.fixture
+def llm_pattern_trace(llm_pattern_events: list) -> Trace:
+    return Trace(events=llm_pattern_events, trace_id=TRACE_ID)

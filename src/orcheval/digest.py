@@ -189,6 +189,11 @@ def _render_anomalies(full: FullReport) -> str:
         if metric.status in ("diverging", "oscillating"):
             items.append(f"- **Convergence**: metric '{metric.metric_name}' is {metric.status}")
 
+    # LLM patterns (warning severity only)
+    for pat in full.llm_patterns.patterns:
+        if pat.severity == "warning":
+            items.append(f"- **LLM Pattern — {pat.pattern_type}**: {pat.description}")
+
     if not items:
         return "## Anomalies Detected\n\nNo anomalies detected.\n"
 

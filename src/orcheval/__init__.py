@@ -19,6 +19,16 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
+from orcheval.collection import (
+    CollectionSummary,
+    ExecutionShape,
+    NodeStats,
+    PercentileStats,
+    TraceCollection,
+    TraceOutlier,
+    TrendPoint,
+    TrendResult,
+)
 from orcheval.report import FullReport, report
 from orcheval.trace import NodeInvocation, Trace
 
@@ -128,4 +138,13 @@ __all__ = [
     # Report
     "FullReport",
     "report",
+    # Collection
+    "TraceCollection",
+    "CollectionSummary",
+    "NodeStats",
+    "PercentileStats",
+    "ExecutionShape",
+    "TraceOutlier",
+    "TrendPoint",
+    "TrendResult",
 ]

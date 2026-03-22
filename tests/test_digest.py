@@ -161,6 +161,22 @@ class TestDigestPrecomputedReports:
         assert "2 nodes" in digest_without
 
 
+class TestDigestLLMPatterns:
+    def test_llm_pattern_warning_in_anomalies(self, llm_pattern_trace: Trace) -> None:
+        digest = llm_pattern_trace.to_digest()
+        # llm_pattern_trace has prompt_growth (warning), repeated_output (warning),
+        # redundant_tool_call (warning) — all should appear in anomalies
+        assert "LLM Pattern" in digest
+        assert "prompt_growth" in digest
+
+    def test_info_severity_excluded(self, llm_pattern_trace: Trace) -> None:
+        digest = llm_pattern_trace.to_digest()
+        # system_message_variance and output_not_utilized are severity=info,
+        # should NOT appear in anomalies section
+        assert "system_message_variance" not in digest
+        assert "output_not_utilized" not in digest
+
+
 class TestDigestEmpty:
     def test_empty_trace(self) -> None:
         trace = Trace(events=[], trace_id=TRACE_ID)

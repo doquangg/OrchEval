@@ -5,6 +5,7 @@ from __future__ import annotations
 from orcheval.report import FullReport, report
 from orcheval.report.convergence import ConvergenceReport
 from orcheval.report.cost import CostReport, cost_report
+from orcheval.report.llm_patterns import LLMPatternsReport
 from orcheval.report.retries import RetryReport
 from orcheval.report.routing import RoutingReport
 from orcheval.report.timeline import TimelineReport
@@ -22,6 +23,7 @@ class TestFullReport:
         assert isinstance(result.convergence, ConvergenceReport)
         assert isinstance(result.timeline, TimelineReport)
         assert isinstance(result.retries, RetryReport)
+        assert isinstance(result.llm_patterns, LLMPatternsReport)
 
     def test_empty_trace(self) -> None:
         trace = Trace(events=[], trace_id=TRACE_ID)
@@ -32,6 +34,7 @@ class TestFullReport:
         assert result.convergence.passes == []
         assert result.timeline.spans == []
         assert result.retries.error_clusters == []
+        assert result.llm_patterns.patterns == []
 
     def test_cost_matches_individual(self, sample_trace: Trace) -> None:
         full = report(sample_trace)

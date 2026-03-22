@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from orcheval.report.convergence import ConvergenceReport, MetricConvergence, PassSummary, convergence_report
 from orcheval.report.cost import CostReport, ModelUsage, NodeCostSummary, cost_report
+from orcheval.report.llm_patterns import LLMPattern, LLMPatternsReport, NodeLLMSummary, llm_patterns_report
 from orcheval.report.retries import ErrorCluster, RetryReport, RetrySequence, retry_report
 from orcheval.report.routing import RoutingEdge, RoutingFlag, RoutingReport, routing_report
 from orcheval.report.timeline import TimelineEvent, TimelineReport, TimelineSpan, timeline_report
@@ -30,6 +31,7 @@ class FullReport(BaseModel):
     convergence: ConvergenceReport
     timeline: TimelineReport
     retries: RetryReport
+    llm_patterns: LLMPatternsReport
 
 
 def report(trace: Trace) -> FullReport:
@@ -47,6 +49,7 @@ def report(trace: Trace) -> FullReport:
         convergence=convergence_report(trace),
         timeline=timeline_report(trace),
         retries=retry_report(trace),
+        llm_patterns=llm_patterns_report(trace),
     )
 
 
@@ -79,4 +82,9 @@ __all__ = [
     "ErrorCluster",
     "RetrySequence",
     "retry_report",
+    # LLM Patterns
+    "LLMPatternsReport",
+    "LLMPattern",
+    "NodeLLMSummary",
+    "llm_patterns_report",
 ]
