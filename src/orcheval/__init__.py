@@ -29,7 +29,7 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval.report import FullReport, report
+from orcheval.report import FullReport, RunComparison, compare_runs, report
 from orcheval.trace import NodeInvocation, Trace
 
 __version__ = "0.1.0"
@@ -146,6 +146,8 @@ __all__ = [
     # Report
     "FullReport",
     "report",
+    "RunComparison",
+    "compare_runs",
     # Collection
     "TraceCollection",
     "CollectionSummary",

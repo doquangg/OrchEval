@@ -210,6 +210,18 @@ class Trace:
         """Deserialize a trace from a JSON string produced by to_json()."""
         return cls.from_dict(json.loads(data))
 
+    # --- Comparison ---
+
+    def compare(self, other: Trace, **kwargs: Any) -> Any:
+        """Compare this trace (baseline) with *other* (experiment).
+
+        Returns a ``RunComparison`` with *self* as the baseline.
+        Keyword arguments are forwarded to ``compare_runs()``.
+        """
+        from orcheval.report.comparison import compare_runs
+
+        return compare_runs(baseline=self, experiment=other, **kwargs)
+
     # --- Presentation ---
 
     def to_digest(
