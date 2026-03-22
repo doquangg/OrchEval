@@ -222,6 +222,29 @@ class Trace:
 
         return compare_runs(baseline=self, experiment=other, **kwargs)
 
+    # --- Export ---
+
+    def to_mermaid(self) -> str:
+        """Produce a Mermaid ``graph LR`` string showing execution topology.
+
+        Edges come from ``RoutingDecision`` events when present, otherwise
+        inferred from consecutive node transitions.  Nodes show invocation
+        counts and error nodes are styled distinctly.
+        """
+        from orcheval.mermaid import build_mermaid
+
+        return build_mermaid(self)
+
+    def to_dataframe(self) -> Any:
+        """Produce a pandas DataFrame with one row per event.
+
+        Returns a ``pandas.DataFrame``.  Raises ``ImportError`` with an
+        install hint if pandas is not available.
+        """
+        from orcheval.dataframe import build_dataframe
+
+        return build_dataframe(self)
+
     # --- Presentation ---
 
     def to_digest(

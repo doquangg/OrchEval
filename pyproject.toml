@@ -35,6 +35,9 @@ langgraph = [
 openai_agents = [
     "openai-agents>=0.0.7",
 ]
+pandas = [
+    "pandas>=1.5",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",

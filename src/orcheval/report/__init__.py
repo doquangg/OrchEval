@@ -10,9 +10,36 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from orcheval.report.convergence import ConvergenceReport, MetricConvergence, PassSummary, convergence_report
+from orcheval.report.comparison import (
+    ConvergenceDiff,
+    CostComparison,
+    CostDelta,
+    DurationComparison,
+    DurationDelta,
+    ErrorComparison,
+    ErrorDiff,
+    InvocationComparison,
+    InvocationDelta,
+    PatternComparison,
+    PatternDiff,
+    RoutingComparison,
+    RoutingDiff,
+    RunComparison,
+    compare_runs,
+)
+from orcheval.report.convergence import (
+    ConvergenceReport,
+    MetricConvergence,
+    PassSummary,
+    convergence_report,
+)
 from orcheval.report.cost import CostReport, ModelUsage, NodeCostSummary, cost_report
-from orcheval.report.llm_patterns import LLMPattern, LLMPatternsReport, NodeLLMSummary, llm_patterns_report
+from orcheval.report.llm_patterns import (
+    LLMPattern,
+    LLMPatternsReport,
+    NodeLLMSummary,
+    llm_patterns_report,
+)
 from orcheval.report.retries import ErrorCluster, RetryReport, RetrySequence, retry_report
 from orcheval.report.routing import RoutingEdge, RoutingFlag, RoutingReport, routing_report
 from orcheval.report.timeline import TimelineEvent, TimelineReport, TimelineSpan, timeline_report
@@ -57,6 +84,22 @@ __all__ = [
     # Unified
     "FullReport",
     "report",
+    # Comparison
+    "RunComparison",
+    "CostComparison",
+    "CostDelta",
+    "DurationComparison",
+    "DurationDelta",
+    "RoutingComparison",
+    "RoutingDiff",
+    "InvocationComparison",
+    "InvocationDelta",
+    "ErrorComparison",
+    "ErrorDiff",
+    "ConvergenceDiff",
+    "PatternComparison",
+    "PatternDiff",
+    "compare_runs",
     # Cost
     "CostReport",
     "NodeCostSummary",
