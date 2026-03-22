@@ -7,6 +7,16 @@ from typing import Any
 
 from orcheval.adapters.base import BaseAdapter
 from orcheval.adapters.manual import ManualAdapter
+from orcheval.collection import (
+    CollectionSummary,
+    ExecutionShape,
+    NodeStats,
+    PercentileStats,
+    TraceCollection,
+    TraceOutlier,
+    TrendPoint,
+    TrendResult,
+)
 from orcheval.events import (
     AgentMessage,
     AnyEvent,
@@ -18,16 +28,6 @@ from orcheval.events import (
     PassBoundary,
     RoutingDecision,
     ToolCall,
-)
-from orcheval.collection import (
-    CollectionSummary,
-    ExecutionShape,
-    NodeStats,
-    PercentileStats,
-    TraceCollection,
-    TraceOutlier,
-    TrendPoint,
-    TrendResult,
 )
 from orcheval.report import FullReport, report
 from orcheval.trace import NodeInvocation, Trace
@@ -84,12 +84,20 @@ class Tracer:
                 infer_routing=self._infer_routing,
                 capture_state=self._capture_state,
             )
+        elif name == "openai_agents":
+            from orcheval.adapters.openai_agents import OpenAIAgentsAdapter
+
+            return OpenAIAgentsAdapter(
+                self._trace_id,
+                infer_routing=self._infer_routing,
+                capture_state=self._capture_state,
+            )
         elif name == "manual":
             return ManualAdapter(self._trace_id)
         else:
             raise ValueError(
-                f"Unknown adapter: {name!r}. Use 'langgraph', 'manual', "
-                f"or pass a BaseAdapter instance."
+                f"Unknown adapter: {name!r}. Use 'langgraph', 'openai_agents', "
+                f"'manual', or pass a BaseAdapter instance."
             )
 
     @property
