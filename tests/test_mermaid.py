@@ -203,6 +203,12 @@ class TestMermaidNodeMetadata:
         r2 = trace.to_mermaid()
         assert r1 == r2
 
+    def test_node_name_with_quotes(self) -> None:
+        trace = _linear_trace(['say "hello"'])
+        result = trace.to_mermaid()
+        assert "&quot;" in result
+        assert 'say "hello"' not in result
+
 
 # ---------------------------------------------------------------------------
 # Integration with sample_trace fixture

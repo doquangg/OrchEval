@@ -240,6 +240,10 @@ class TestErrorTracking:
         assert len(error_events) == 1
         assert error_events[0].error_type == "ValueError"
         assert error_events[0].error_message == "bad input"
+        # on_chain_error should also emit NodeExit via cleanup delegation
+        exit_events = [e for e in events if isinstance(e, NodeExit)]
+        assert len(exit_events) == 1
+        assert exit_events[0].node_name == "agent"
 
     def test_llm_error_emits_error_event(self) -> None:
         adapter = LangGraphAdapter(trace_id=TRACE_ID)

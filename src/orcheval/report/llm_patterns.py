@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from orcheval.events import LLMCall, NodeEntry, NodeExit, ToolCall
 
 if TYPE_CHECKING:
-    from orcheval.trace import Trace
+    from orcheval.trace import NodeInvocation, Trace
 
 PROMPT_GROWTH_THRESHOLD = 0.50  # 50% growth triggers a warning
 
@@ -87,7 +87,9 @@ class _InvocationMap:
         self.all_tool = all_tool
 
 
-def _build_invocation_map(trace: Trace) -> _InvocationMap:
+def _build_invocation_map(
+    trace: Trace, invocations: list[NodeInvocation],
+) -> _InvocationMap:
     """Build per-node, per-invocation groupings of LLM and tool calls.
 
     LLM/tool calls are matched to invocations via ``parent_span_id``.
@@ -96,7 +98,6 @@ def _build_invocation_map(trace: Trace) -> _InvocationMap:
     lists (and counted in summaries) but are excluded from per-invocation
     pattern detection.
     """
-    invocations = trace.node_invocations()
 
     # span_id -> (node_name, invocation_index)
     span_to_inv: dict[str, tuple[str, int]] = {}
@@ -317,13 +318,20 @@ def _detect_system_message_variance(inv_map: _InvocationMap) -> list[LLMPattern]
     return patterns
 
 
-def _detect_output_not_utilized(trace: Trace, inv_map: _InvocationMap) -> list[LLMPattern]:
+def _detect_output_not_utilized(
+    trace: Trace, inv_map: _InvocationMap, invocations: list[NodeInvocation],
+) -> list[LLMPattern]:
     """Flag invocations where LLM produced output but state was unchanged."""
     patterns: list[LLMPattern] = []
 
-    invocations = trace.node_invocations()
     exits = trace.get_events_by_type(NodeExit)
     exit_by_span: dict[str, NodeExit] = {e.span_id: e for e in exits}
+
+    # Precompute per-node local index: node_name -> {span_id -> local_idx}
+    node_span_to_local: dict[str, dict[str, int]] = defaultdict(dict)
+    for ni in invocations:
+        idx_map = node_span_to_local[ni.node_name]
+        idx_map[ni.span_id] = len(idx_map)
 
     for inv in invocations:
         node_exit = exit_by_span.get(inv.span_id)
@@ -343,20 +351,8 @@ def _detect_output_not_utilized(trace: Trace, inv_map: _InvocationMap) -> list[L
         if inv.node_name not in inv_map.llm_by_node:
             continue
 
-        # Find the invocation index for this span
         inv_lists = inv_map.llm_by_node[inv.node_name]
-        node_invocations = trace.node_invocations()
-        inv_idx = None
-        for idx, ni in enumerate(node_invocations):
-            if ni.span_id == inv.span_id:
-                inv_idx = idx
-                break
-        if inv_idx is None:
-            continue
-
-        # Find which invocation list corresponds to this span
-        node_spans = [ni.span_id for ni in node_invocations if ni.node_name == inv.node_name]
-        local_idx = node_spans.index(inv.span_id) if inv.span_id in node_spans else None
+        local_idx = node_span_to_local.get(inv.node_name, {}).get(inv.span_id)
         if local_idx is None or local_idx >= len(inv_lists):
             continue
 
@@ -396,7 +392,9 @@ def _detect_output_not_utilized(trace: Trace, inv_map: _InvocationMap) -> list[L
 # ---------------------------------------------------------------------------
 
 
-def _build_node_summaries(trace: Trace, inv_map: _InvocationMap) -> list[NodeLLMSummary]:
+def _build_node_summaries(
+    inv_map: _InvocationMap, invocations: list[NodeInvocation],
+) -> list[NodeLLMSummary]:
     """Build per-node aggregate statistics."""
     # Collect all node names from invocations and from LLM/tool calls
     node_names: set[str] = set(inv_map.llm_by_node.keys()) | set(inv_map.tool_by_node.keys())
@@ -408,8 +406,6 @@ def _build_node_summaries(trace: Trace, inv_map: _InvocationMap) -> list[NodeLLM
     for c in inv_map.all_tool:
         if c.node_name:
             node_names.add(c.node_name)
-
-    invocations = trace.node_invocations()
     inv_counts: dict[str, int] = defaultdict(int)
     for inv in invocations:
         inv_counts[inv.node_name] += 1
@@ -463,15 +459,16 @@ def llm_patterns_report(trace: Trace) -> LLMPatternsReport:
     if not all_llm and not trace.get_tool_calls():
         return LLMPatternsReport()
 
-    inv_map = _build_invocation_map(trace)
-    summaries = _build_node_summaries(trace, inv_map)
+    invocations = trace.node_invocations()
+    inv_map = _build_invocation_map(trace, invocations)
+    summaries = _build_node_summaries(inv_map, invocations)
 
     patterns: list[LLMPattern] = []
     patterns.extend(_detect_prompt_growth(inv_map))
     patterns.extend(_detect_repeated_output(inv_map))
     patterns.extend(_detect_redundant_tool_calls(inv_map))
     patterns.extend(_detect_system_message_variance(inv_map))
-    patterns.extend(_detect_output_not_utilized(trace, inv_map))
+    patterns.extend(_detect_output_not_utilized(trace, inv_map, invocations))
 
     # Count unique nodes that have LLM or tool calls
     nodes_analyzed = len({s.node_name for s in summaries if s.total_llm_calls > 0 or s.total_tool_calls > 0})

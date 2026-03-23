@@ -385,7 +385,7 @@ class TestTrend:
 
 
 class TestFromJsonDir:
-    def test_round_trip(self, tmp_path, collection_traces: list[Trace]) -> None:
+    def test_round_trip(self, tmp_path, collection_traces: list[Trace], caplog) -> None:
         # Write traces to temp directory
         for i, t in enumerate(collection_traces):
             (tmp_path / f"trace_{i}.json").write_text(t.to_json(), encoding="utf-8")
@@ -393,8 +393,11 @@ class TestFromJsonDir:
         # Also write a non-trace file that should be skipped
         (tmp_path / "invalid.json").write_text("not valid json", encoding="utf-8")
 
-        coll = TraceCollection.from_json_dir(tmp_path)
+        import logging
+        with caplog.at_level(logging.WARNING, logger="orcheval.collection"):
+            coll = TraceCollection.from_json_dir(tmp_path)
         assert len(coll) == 5
+        assert any("invalid.json" in r.message for r in caplog.records)
 
     def test_empty_directory(self, tmp_path) -> None:
         coll = TraceCollection.from_json_dir(tmp_path)

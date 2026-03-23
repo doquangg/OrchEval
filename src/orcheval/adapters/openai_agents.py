@@ -117,7 +117,7 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
 
         def __init__(self, adapter: OpenAIAgentsAdapter) -> None:
             self._adapter = adapter
-            self._lock = threading.Lock()
+            self._lock = threading.RLock()
 
             # --- Span tracking ---
             # Maps SDK span_id -> OrchEval-generated span_id (uuid4 hex).
@@ -255,6 +255,7 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
                     # for this target — suppress the inferred duplicate.
                     self._handoff_targets.discard(agent_name)
                 else:
+                    # node_name == source_node by design: the decision belongs to the node making the routing choice
                     routing_event = RoutingDecision(
                         trace_id=self._adapter.trace_id,
                         span_id=self._make_span_id(),
@@ -307,6 +308,8 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
 
             with self._lock:
                 # --- Error check ---
+                # For agent spans, parent_span_id resolves to the agent's own span
+                # (the error is attributed to the agent that encountered it).
                 error = getattr(span, "error", None)
                 if error is not None:
                     agent_name_err, parent_err = self._get_agent_context(sdk_span_id)

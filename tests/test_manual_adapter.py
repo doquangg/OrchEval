@@ -81,6 +81,13 @@ class TestManualAdapterConvenience:
         assert event.model == "gpt-4o"
         assert event.input_tokens == 100
 
+    def test_llm_call_with_node_name(self) -> None:
+        adapter = ManualAdapter(trace_id=TRACE_ID)
+        event = adapter.llm_call(node_name="agent_1", model="gpt-4o", input_tokens=50, output_tokens=25)
+        assert isinstance(event, LLMCall)
+        assert event.node_name == "agent_1"
+        assert event.model == "gpt-4o"
+
     def test_tool_call(self) -> None:
         adapter = ManualAdapter(trace_id=TRACE_ID)
         event = adapter.tool_call("search", tool_input={"q": "test"}, tool_output="results")

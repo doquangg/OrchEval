@@ -71,6 +71,7 @@ def build_mermaid(trace: Trace) -> str:
         nid = _sanitize_id(name)
         count = invocation_counts.get(name, 0)
         label = f"{name} ({count}x)" if count > 0 else name
+        label = label.replace('"', "&quot;")
         suffix = ":::error" if name in error_nodes else ""
         lines.append(f'    {nid}["{label}"]{suffix}')
 

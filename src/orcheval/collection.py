@@ -6,6 +6,7 @@ execution shape clustering, and trend analysis.
 
 from __future__ import annotations
 
+import logging
 import statistics as stats_mod
 from collections import defaultdict
 from datetime import datetime
@@ -16,6 +17,8 @@ from pydantic import BaseModel, Field
 
 from orcheval.events import ErrorEvent
 from orcheval.trace import Trace
+
+_log = logging.getLogger(__name__)
 
 
 class PercentileStats(BaseModel):
@@ -55,7 +58,11 @@ class ExecutionShape(BaseModel):
 
 
 class TraceOutlier(BaseModel):
-    """A trace flagged as an outlier for a specific metric."""
+    """A trace flagged as an outlier for a specific metric.
+
+    ``threshold_multiplier`` is the detection threshold used to find outliers,
+    not the actual ratio of value to median. The actual ratio is in ``reason``.
+    """
 
     model_config = {"frozen": True}
 
@@ -83,9 +90,15 @@ class TrendResult(BaseModel):
     model_config = {"frozen": True}
 
     metric: str
-    direction: Literal["increasing", "decreasing", "stable", "insufficient_data"]
+    direction: Literal["increasing", "decreasing", "stable", "insufficient_data"] = Field(
+        description="Trend direction based on first-half vs second-half mean comparison."
+    )
     points: list[TrendPoint] = Field(default_factory=list)
-    change_pct: float | None = None
+    change_pct: float | None = Field(
+        default=None,
+        description="Endpoint-to-endpoint percentage change (first trace value to last). "
+        "May differ from direction, which uses half-split means.",
+    )
 
 
 class CollectionSummary(BaseModel):
@@ -182,7 +195,8 @@ class TraceCollection:
             try:
                 text = fp.read_text(encoding="utf-8")
                 traces.append(Trace.from_json(text))
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                _log.warning("Skipping %s: %s", fp.name, e)
                 continue
         return cls(traces)
 

@@ -90,7 +90,7 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
         def __init__(self, adapter: LangGraphAdapter) -> None:
             super().__init__()
             self._adapter = adapter
-            self._lock = threading.Lock()
+            self._lock = threading.RLock()
 
             # Span tracking
             self._run_to_span: dict[str, str] = {}  # run_id -> span_id
@@ -157,6 +157,7 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                         self._adapter._infer_routing
                         and self._last_exited_node is not None
                     ):
+                        # node_name == source_node by design: the decision belongs to the node making the routing choice
                         routing_event = RoutingDecision(
                             trace_id=self._adapter.trace_id,
                             span_id=self._make_span_id(),

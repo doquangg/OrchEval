@@ -49,7 +49,7 @@ def sanitize_state(
                 value, max_string=max_string, max_json_value=max_json_value, seen=seen
             )
             safe[key] = sanitized
-            budget -= cost
+            budget -= cost + len(key)
         except Exception:
             # Never crash on a single key — skip it
             pass

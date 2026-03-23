@@ -386,6 +386,8 @@ def _js() -> str:
       span.children.forEach(function(child) {
         if (child.event_type === 'node_entry' || child.event_type === 'node_exit') return;
         const relOffset = child.offset_ms - span.start_ms;
+        // Clamp to [0, 100] — child timestamps may fall slightly outside the parent span
+        // due to clock skew or rounding, so we defensively bound the position.
         const posPct = Math.max(0, Math.min(100, (relOffset / spanDur) * 100));
         const marker = document.createElement('div');
         marker.className = 'child-marker';

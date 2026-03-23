@@ -251,8 +251,6 @@ def _duration_delta(
 def _compare_costs(
     b_cost: CostReport,
     e_cost: CostReport,
-    b_trace: Trace,
-    e_trace: Trace,
 ) -> CostComparison:
     # Total
     b_total = b_cost.total_cost
@@ -654,7 +652,7 @@ def compare_runs(
     b_report = baseline_report or _report(baseline)
     e_report = experiment_report or _report(experiment)
 
-    cost = _compare_costs(b_report.cost, e_report.cost, baseline, experiment)
+    cost = _compare_costs(b_report.cost, e_report.cost)
     dur = _compare_durations(baseline, experiment, duration_flag_threshold)
     rout = _compare_routing(b_report.routing, e_report.routing)
     inv = _compare_invocations(baseline, experiment)

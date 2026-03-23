@@ -37,18 +37,19 @@ def build_digest(
         Markdown-formatted digest string.
     """
     full = _get_reports(trace, reports)
+    invocations = trace.node_invocations()
 
     sections: list[tuple[str, str, int]] = []  # (name, content, priority)
 
     title = f"# Trace Digest: {trace.trace_id}\n"
-    overview = _render_overview(trace, full)
+    overview = _render_overview(trace, full, invocations)
     sections.append(("title", title, 100))
     sections.append(("overview", overview, 90))
 
     anomalies = _render_anomalies(full)
     sections.append(("anomalies", anomalies, 80))
 
-    execution = _render_execution_flow(trace, focus_nodes)
+    execution = _render_execution_flow(trace, invocations, focus_nodes)
     sections.append(("execution", execution, 60))
 
     state_evo = _render_state_evolution(trace, focus_nodes)
@@ -70,11 +71,12 @@ def _get_reports(trace: Trace, reports: FullReport | None) -> FullReport:
     return generate_report(trace)
 
 
-def _render_overview(trace: Trace, full: FullReport) -> str:
+def _render_overview(
+    trace: Trace, full: FullReport, invocations: list[NodeInvocation],
+) -> str:
     """Render the Overview section."""
     node_seq = trace.node_sequence()
     unique_nodes = len(set(node_seq))
-    invocations = trace.node_invocations()
     inv_count = len(invocations)
     duration = trace.total_duration()
     cost = trace.total_cost()
@@ -105,9 +107,10 @@ def _render_overview(trace: Trace, full: FullReport) -> str:
     return f"## Overview\n\n{summary_line}\n"
 
 
-def _render_execution_flow(trace: Trace, focus_nodes: list[str] | None) -> str:
+def _render_execution_flow(
+    trace: Trace, invocations: list[NodeInvocation], focus_nodes: list[str] | None,
+) -> str:
     """Render the Execution Flow section."""
-    invocations = trace.node_invocations()
     if not invocations:
         return "## Execution Flow\n\nNo node executions recorded.\n"
 
@@ -122,10 +125,7 @@ def _render_execution_flow(trace: Trace, focus_nodes: list[str] | None) -> str:
     step = 0
 
     for inv in invocations:
-        events = _invocation_events(trace, inv)
-        errors = [e for e in events if isinstance(e, ErrorEvent)]
-        is_retry = node_inv_counts[inv.node_name] > 1
-        is_notable = bool(errors) or is_retry
+        step += 1
 
         # Focus filtering
         if focus_nodes is not None and inv.node_name not in focus_nodes:
@@ -143,7 +143,10 @@ def _render_execution_flow(trace: Trace, focus_nodes: list[str] | None) -> str:
             collapsed_count = 0
             collapsed_duration = 0.0
 
-        step += 1
+        events = _invocation_events(trace, inv)
+        errors = [e for e in events if isinstance(e, ErrorEvent)]
+        is_retry = node_inv_counts[inv.node_name] > 1
+        is_notable = bool(errors) or is_retry
         dur = f" ({inv.duration_ms:.0f}ms)" if inv.duration_ms is not None else ""
 
         if is_notable:

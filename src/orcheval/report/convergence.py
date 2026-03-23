@@ -84,8 +84,6 @@ def _classify_metric(values: list[float]) -> MetricStatus:
     # --- plateau check: last two deltas effectively zero ---
     if len(abs_deltas) >= 2 and all(d <= _PLATEAU_EPSILON for d in abs_deltas[-2:]):
         return "plateaued"
-    if len(abs_deltas) == 1 and abs_deltas[0] <= _PLATEAU_EPSILON:
-        return "plateaued"
 
     # --- oscillation check: direction flips ≥ 3 times ---
     raw_deltas = [values[i] - values[i - 1] for i in range(1, len(values))]
