@@ -2,22 +2,20 @@
 
 Evaluate, profile, and debug multi-agent LLM systems.
 
-OrchEval captures structured trace events from multi-agent orchestrations and provides
-query and analysis tools for understanding system-level behavior — routing
-correctness, inter-agent data flow, cost/latency per agent, and convergence across passes.
+[![PyPI](https://img.shields.io/pypi/v/orcheval)](https://pypi.org/project/orcheval/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 ## Installation
 
 ```bash
-pip install orcheval
-
-# With LangGraph support:
-pip install orcheval[langgraph]
+pip install orcheval                    # core (pydantic only)
+pip install orcheval[langgraph]         # + LangGraph adapter
+pip install orcheval[openai_agents]     # + OpenAI Agents SDK adapter
+pip install orcheval[pandas]            # + DataFrame export
 ```
 
-## Quick Start
-
-### With LangGraph
+## Quickstart
 
 ```python
 from orcheval import Tracer
@@ -26,51 +24,60 @@ tracer = Tracer(adapter="langgraph")
 result = graph.invoke(input, config={"callbacks": [tracer.handler]})
 trace = tracer.collect()
 
-# Capture input/output state snapshots on each node
-tracer = Tracer(adapter="langgraph", capture_state=True)
-
-# Inspect what happened
-print(trace.node_sequence())        # ["agent", "summarizer"]
-print(trace.total_cost())           # 0.007
-print(trace.total_tokens())         # {"prompt": 350, "completion": 180, "total": 530}
-print(trace.node_durations())       # {"agent": 3000.0, "summarizer": 2000.0}
-
-for call in trace.get_llm_calls():
-    print(f"{call.node_name}: {call.model} ({call.input_tokens}+{call.output_tokens} tokens)")
+print(trace.node_sequence())   # ['planner', 'coder', 'reviewer']
+print(trace.total_cost())      # 0.025
+print(trace.total_tokens())    # {'prompt': 950, 'completion': 350, 'total': 1300}
 ```
 
-### Manual Tracing
-
-For frameworks without a built-in adapter:
-
 ```python
-from orcheval import Tracer
+# Compact text digest — feed it to an LLM for analysis
+print(trace.to_digest())
+```
 
-tracer = Tracer()  # defaults to manual adapter
-tracer.adapter.node_entry("agent")
-tracer.adapter.llm_call(model="gpt-4o", input_tokens=100, output_tokens=50, cost=0.003)
-tracer.adapter.node_exit("agent", duration_ms=1500.0)
+```
+# Trace Digest: a1b2c3d4
 
-trace = tracer.collect()
+## Overview
+- **Nodes:** planner → coder → reviewer (3 unique)
+- **Duration:** 5300ms
+- **Cost:** $0.025 (950 prompt + 350 completion = 1300 tokens)
+- **Errors:** 0
+
+## Execution Flow
+1. **planner** — 1 LLM call (gpt-4o), 1500ms
+2. **coder** — 1 LLM call (gpt-4o), 1 tool call (execute_code), 3000ms
+3. **reviewer** — 1 LLM call (gpt-4o-mini), 800ms
 ```
 
 ## Reports
 
-Generate structured analysis from a trace:
-
 ```python
-from orcheval import Tracer, report
-
-tracer = Tracer(adapter="langgraph")
-result = graph.invoke(input, config={"callbacks": [tracer.handler]})
-trace = tracer.collect()
+from orcheval import report
 
 full = report(trace)
-print(full.cost.total_cost)           # Total $ across all LLM calls
-print(full.routing.total_decisions)   # Number of routing decisions observed
-print(full.timeline.total_duration_ms)
-print(full.convergence.is_converging) # True if metrics improve across passes
-print(full.retries.total_errors)      # Total error count
+
+# Cost breakdown
+full.cost.total_cost            # 0.025
+full.cost.most_expensive_node   # 'coder'
+full.cost.most_expensive_model  # 'gpt-4o'
+
+# Routing audit
+full.routing.total_decisions    # 2
+full.routing.flags              # [RoutingFlag(flag_type='invariant_routing', ...)]
+
+# Convergence (for multi-pass systems)
+full.convergence.is_converging  # True
+full.convergence.total_passes   # 3
+
+# Timeline
+full.timeline.total_duration_ms # 5300.0
+
+# Retries and errors
+full.retries.total_errors       # 0
+full.retries.retry_sequences    # []
+
+# LLM behavioral patterns
+full.llm_patterns.patterns      # [LLMPattern(pattern_type='prompt_growth', ...)]
 ```
 
 Individual reports can be generated separately:
@@ -82,72 +89,267 @@ cost = cost_report(trace)
 routing = routing_report(trace)
 ```
 
-## Inspection
+### Routing Flags
 
-### Text Digest
-
-Generate a compact Markdown summary optimized for feeding to an LLM:
+OrchEval detects suspicious routing patterns automatically:
 
 ```python
-# Compact overview of the trace
+for flag in full.routing.flags:
+    print(f"[{flag.flag_type}] {flag.description}")
+# [invariant_routing] planner always routes to coder (3/3 decisions)
+# [dominant_path] coder routes to reviewer 95%+ of the time
+```
+
+Flag types: `invariant_routing`, `context_divergence`, `dominant_path`, `oscillation`.
+
+### LLM Patterns
+
+```python
+for p in full.llm_patterns.patterns:
+    print(f"[{p.severity}] {p.pattern_type}: {p.description}")
+# [warning] prompt_growth: coder input tokens grew 120% across invocations
+# [warning] redundant_tool_call: execute_code called 3x with identical input
+# [info] output_not_utilized: reviewer LLM output produced but state unchanged
+```
+
+Pattern types: `prompt_growth`, `repeated_output`, `redundant_tool_call`, `system_message_variance`, `output_not_utilized`.
+
+## HTML Visualization
+
+```python
+trace.to_html("trace.html")
+```
+
+Generates a self-contained HTML file (no external dependencies) with:
+- Summary metrics panel (duration, cost, tokens, errors)
+- Interactive waterfall timeline with swimlane layout per node
+- Click-to-expand detail panels showing LLM calls, tool calls, errors, and state diffs
+
+Open `trace.html` in any browser.
+
+## Text Digest
+
+```python
+# Compact overview
 print(trace.to_digest())
 
-# Focus on specific nodes, collapsing others into a summary line
-print(trace.to_digest(focus_nodes=["agent"]))
+# Focus on specific nodes, collapse others into a summary line
+print(trace.to_digest(focus_nodes=["coder"]))
 
 # Include full LLM prompt/response content
 print(trace.to_digest(include_llm_content=True))
 
 # Control output size (~4 chars per token)
 print(trace.to_digest(max_chars=8_000))
+
+# Reuse a precomputed FullReport
+print(trace.to_digest(reports=full))
 ```
 
-If you already have a `FullReport`, pass it to avoid recomputation:
+## Run Comparison
 
 ```python
-full = report(trace)
-digest = trace.to_digest(reports=full)
+from orcheval import compare_runs
+
+diff = compare_runs(baseline_trace, experiment_trace)
+
+# Natural-language summary of all changes
+print(diff.summary)
+# "Cost increased $0.025 → $0.031 (+24.0%). coder duration flagged: 3000ms → 4200ms (+40.0%)."
+
+# Programmatic access
+diff.cost.total_delta.delta       # 0.006
+diff.cost.total_delta.pct_change  # 24.0
+diff.duration.total_delta.flagged # True
+diff.errors.new_errors            # []
+diff.llm_patterns.new_patterns    # [PatternDiff(...)]
+
+# Or compare directly from a trace
+diff = baseline_trace.compare(experiment_trace)
 ```
 
-### HTML Visualization
-
-Generate a self-contained HTML waterfall visualization with no external dependencies:
+## Cross-Run Aggregation
 
 ```python
-# Write to file and get the HTML string back
-html = trace.to_html("trace.html")
+from orcheval import TraceCollection
 
-# Or just get the HTML string
-html = trace.to_html()
+collection = TraceCollection.from_traces(trace1, trace2, trace3, trace4, trace5)
+# Or load from a directory of JSON files:
+# collection = TraceCollection.from_json_dir("traces/")
+
+# Aggregate statistics
+summary = collection.summary()
+summary.trace_count                # 5
+summary.total_cost.mean            # 0.027
+summary.total_cost.p95             # 0.035
+summary.unique_node_names          # ['planner', 'coder', 'reviewer']
+
+# Per-node breakdown
+coder_stats = collection.node_stats("coder")
+coder_stats.duration.median        # 3100.0
+coder_stats.cost.mean              # 0.015
+coder_stats.error_rate             # 0.2
+
+# Outlier detection
+outliers = collection.find_outliers("cost", threshold=2.0)
+for o in outliers:
+    print(f"Trace {o.trace_id}: {o.metric}={o.value:.3f} (median={o.median:.3f}) — {o.reason}")
+# Trace abc123: cost=0.052 (median=0.027) — cost is 1.93x the median (threshold: 2.0x)
+
+# Execution shape clustering
+for shape in collection.execution_shapes():
+    print(f"{shape.node_sequence} — {shape.trace_count} traces ({shape.fraction:.0%})")
+# ['planner', 'coder', 'reviewer'] — 4 traces (80%)
+# ['planner', 'coder', 'coder', 'reviewer'] — 1 trace (20%)
+
+# Trend analysis
+trend = collection.trend("cost")
+trend.direction   # 'increasing'
+trend.change_pct  # 15.2
 ```
 
-The visualization includes a swimlane timeline, summary metrics, and click-to-expand
-detail panels showing LLM calls, tool calls, errors, and state diffs for each node.
+## Mermaid Export
+
+```python
+print(trace.to_mermaid())
+```
+
+```mermaid
+graph LR
+    planner["planner (1x)"]
+    coder["coder (1x)"]
+    reviewer["reviewer (1x)"]
+    planner -->|"1x"| coder
+    coder -->|"1x"| reviewer
+```
+
+GitHub renders Mermaid blocks natively. Nodes with errors are highlighted in red.
+
+## DataFrame Export
+
+```python
+df = trace.to_dataframe()  # requires pip install orcheval[pandas]
+```
+
+One row per event. Columns include: `event_type`, `timestamp`, `node_name`, `span_id`, `duration_ms`, `model`, `input_tokens`, `output_tokens`, `cost`, `tool_name`, `error_type`, `source_node`, `target_node`, and more.
+
+## Framework Support
+
+### LangGraph
+
+```python
+from orcheval import Tracer
+
+tracer = Tracer(adapter="langgraph")
+result = graph.invoke(input, config={"callbacks": [tracer.handler]})
+trace = tracer.collect()
+```
+
+Options:
+
+```python
+# Infer routing decisions from node transitions
+tracer = Tracer(adapter="langgraph", infer_routing=True)
+
+# Capture input/output state on each node
+tracer = Tracer(adapter="langgraph", capture_state=True)
+```
+
+### OpenAI Agents SDK
+
+```python
+from orcheval import Tracer
+from agents.tracing import add_trace_processor
+
+tracer = Tracer(adapter="openai_agents")
+add_trace_processor(tracer.handler)
+
+result = await Runner.run(agent, "Summarize the document")
+trace = tracer.collect()
+```
+
+Options:
+
+```python
+# Infer routing decisions between agents
+tracer = Tracer(adapter="openai_agents", infer_routing=True)
+
+# Capture agent metadata (name, tools, handoffs, output_type)
+tracer = Tracer(adapter="openai_agents", capture_state=True)
+```
+
+### Manual Adapter
+
+For frameworks without a built-in adapter:
+
+```python
+from orcheval import Tracer
+
+tracer = Tracer()  # defaults to manual
+a = tracer.adapter
+
+a.node_entry("agent")
+a.llm_call(node_name="agent", model="gpt-4o", input_tokens=150, output_tokens=80, cost=0.005)
+a.tool_call("search", node_name="agent", tool_input={"query": "test"}, tool_output="result")
+a.node_exit("agent", duration_ms=3000.0)
+
+trace = tracer.collect()
+```
+
+Same `Trace` object, same analysis, regardless of framework.
 
 ## Saving and Loading Traces
 
 ```python
-# Serialize to JSON
+# Serialize
 json_str = trace.to_json()
+d = trace.to_dict()
 
-# Deserialize from JSON
+# Deserialize
 from orcheval import Trace
 loaded = Trace.from_json(json_str)
-
-# Dict form for programmatic use
-d = trace.to_dict()
 loaded = Trace.from_dict(d)
-```
 
-## Merging Traces
-
-Combine multiple traces into a single trace, re-sorted by timestamp:
-
-```python
-from orcheval import Trace
-
+# Merge multiple traces
 combined = Trace.merge(trace1, trace2, trace3)
 ```
+
+## What OrchEval Analyzes
+
+- Cost and token breakdown by node and model
+- Routing decision audit with pattern detection (invariant routing, oscillation, dominant paths)
+- Multi-pass convergence tracking with per-metric trend classification
+- Retry and error pattern analysis with success rates
+- LLM behavioral patterns (prompt growth, stuck agents, redundant tool calls)
+- Execution timeline with span hierarchy and state diffs
+- Cross-run aggregation with outlier detection and trend analysis
+
+## Comparison with Other Tools
+
+| Tool | Strengths | What OrchEval adds |
+|---|---|---|
+| **LangSmith** | Production tracing, prompt playground, dataset management | System-level multi-agent analysis (routing audits, convergence, LLM pattern detection). Offline/local — no SaaS account needed. |
+| **Langfuse** | Open-source tracing, cost tracking, prompt management | Cross-run aggregation, execution shape clustering, behavioral anomaly detection. Self-contained HTML output. |
+| **Arize Phoenix** | Embedding analysis, retrieval evaluation, LLM evals | Multi-agent-specific reports (routing flags, retry sequences, inter-agent patterns). No server required. |
+
+## Architecture
+
+OrchEval has three layers:
+
+```
+Collect         →    Report          →    Inspect
+─────────────        ──────────────       ──────────────
+Adapters emit        report() runs        to_digest()
+framework events     6 analysis modules   to_html()
+into Traces          compare_runs()       to_mermaid()
+                     TraceCollection      to_dataframe()
+```
+
+For contributor details, see the directory READMEs:
+[`src/orcheval/`](src/orcheval/README.md) |
+[`src/orcheval/adapters/`](src/orcheval/adapters/README.md) |
+[`src/orcheval/report/`](src/orcheval/report/README.md) |
+[`tests/`](tests/README.md)
 
 ## Known Limitations
 
