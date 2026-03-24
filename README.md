@@ -158,7 +158,9 @@ All export methods that accept a bare filename (e.g. `"trace.html"`) write to th
 
 Open `orcheval_outputs/trace.html` in any browser.
 
-![alt text](image.png)
+<video width="100%" autoplay loop muted controls>
+  <source src="https://github.com/user-attachments/assets/9159c468-1993-4ed5-99b2-aa731db0476a" type="video/mp4">
+</video>
 
 ## Text Digest
 
