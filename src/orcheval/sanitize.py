@@ -57,6 +57,55 @@ def sanitize_state(
     return safe
 
 
+def _convert_pandas_numpy_types(obj: Any) -> Any:
+    """Recursively convert pandas/numpy types to Python primitives.
+
+    Handles pandas Timestamp, NaT, numpy integers/floats, and other common
+    numpy/pandas types that Pydantic can't serialize.
+    """
+    try:
+        import numpy as np
+        import pandas as pd
+
+        # pandas Timestamp
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
+
+        # NaT (Not a Time) - check type before calling pd.isna()
+        if isinstance(obj, type(pd.NaT)):
+            return None
+
+        # pandas NA
+        if isinstance(obj, type(pd.NA)):
+            return None
+
+        # numpy integer types
+        if isinstance(obj, np.integer):
+            return int(obj)
+
+        # numpy floating types
+        if isinstance(obj, np.floating):
+            return float(obj)
+
+        # numpy bool
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+
+    except ImportError:
+        pass
+
+    # Recursively handle dicts
+    if isinstance(obj, dict):
+        return {k: _convert_pandas_numpy_types(v) for k, v in obj.items()}
+
+    # Recursively handle lists
+    if isinstance(obj, list):
+        return [_convert_pandas_numpy_types(item) for item in obj]
+
+    # Return as-is for primitives and other types
+    return obj
+
+
 def _sanitize_value(
     value: Any,
     *,
@@ -74,6 +123,35 @@ def _sanitize_value(
         return sentinel, len(sentinel)
     if isinstance(value, (dict, list, set)):
         seen.add(id(value))
+
+    # Handle numpy/pandas types - convert to Python primitives
+    try:
+        import numpy as np
+        import pandas as pd
+
+        # Handle pandas Timestamp (before scalar checks since it's special)
+        if isinstance(value, pd.Timestamp):
+            iso_str = value.isoformat()
+            return iso_str, len(iso_str)
+
+        # Handle pandas NaT and pandas NA (scalar scalar only)
+        if isinstance(value, (type(pd.NaT), type(pd.NA))):
+            return None, 4
+
+        # Handle numpy integer types
+        if isinstance(value, np.integer):
+            return int(value), len(str(int(value)))
+
+        # Handle numpy floating types
+        if isinstance(value, np.floating):
+            return float(value), len(str(float(value)))
+
+        # Handle numpy bool
+        if isinstance(value, np.bool_):
+            return bool(value), 4
+
+    except ImportError:
+        pass
 
     # Primitives pass through
     if isinstance(value, (bool, int, float, type(None))):
@@ -118,11 +196,15 @@ def _sanitize_value(
         import pandas as pd  # type: ignore[import-untyped]
 
         if isinstance(value, pd.DataFrame):
+            # Convert DataFrame head to records, then recursively convert pandas/numpy types to Python primitives
+            head_records = value.head(3).to_dict(orient="records")
+            head_converted = _convert_pandas_numpy_types(head_records)
+
             summary_df: dict[str, Any] = {
                 "__type__": "DataFrame",
                 "shape": list(value.shape),
                 "columns": list(value.columns),
-                "head": value.head(3).to_dict(orient="records"),
+                "head": head_converted,
             }
             rep_df = json.dumps(summary_df, default=str)
             return summary_df, len(rep_df)

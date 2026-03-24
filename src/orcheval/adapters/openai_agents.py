@@ -449,8 +449,10 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
             input_tokens: int | None = None
             output_tokens: int | None = None
             if isinstance(usage, dict):
-                input_tokens = usage.get("input_tokens")
-                output_tokens = usage.get("output_tokens")
+                in_toks = usage.get("input_tokens")
+                out_toks = usage.get("output_tokens")
+                input_tokens = int(in_toks) if in_toks is not None else None
+                output_tokens = int(out_toks) if out_toks is not None else None
 
             event = LLMCall(
                 trace_id=self._adapter.trace_id,

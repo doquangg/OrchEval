@@ -390,8 +390,10 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                 output_tokens = None
                 if response.llm_output:
                     usage = response.llm_output.get("token_usage", {})
-                    input_tokens = usage.get("prompt_tokens")
-                    output_tokens = usage.get("completion_tokens")
+                    prompt_toks = usage.get("prompt_tokens")
+                    completion_toks = usage.get("completion_tokens")
+                    input_tokens = int(prompt_toks) if prompt_toks is not None else None
+                    output_tokens = int(completion_toks) if completion_toks is not None else None
 
                 # Extract response text
                 output_message: dict[str, Any] | None = None

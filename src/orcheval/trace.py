@@ -200,9 +200,84 @@ class Trace:
 
     def to_json(self) -> str:
         """Serialize the trace to a JSON string."""
+        from orcheval.events import PassBoundary, LLMCall
+
+        events_data = []
+        for i, e in enumerate(self._events):
+            try:
+                events_data.append(e.model_dump(mode="json"))
+            except TypeError as err:
+                # Handle float/int conversion issues by fixing the event fields
+                if "'float' object cannot be interpreted as an integer" in str(err):
+                    # Try to fix PassBoundary metrics
+                    if isinstance(e, PassBoundary) and e.metrics_snapshot:
+                        fixed_metrics = {}
+                        for key, val in e.metrics_snapshot.items():
+                            if key in ('violations_found', 'rows_remaining', 'steps_executed'):
+                                fixed_metrics[key] = int(val) if val is not None else None
+                            else:
+                                fixed_metrics[key] = val
+                        # Recreate the event with fixed metrics
+                        e_fixed = PassBoundary(
+                            trace_id=e.trace_id,
+                            span_id=e.span_id,
+                            parent_span_id=e.parent_span_id,
+                            timestamp=e.timestamp,
+                            node_name=e.node_name,
+                            metadata=e.metadata,
+                            pass_number=int(e.pass_number) if isinstance(e.pass_number, float) else e.pass_number,
+                            direction=e.direction,
+                            metrics_snapshot=fixed_metrics,
+                        )
+                        try:
+                            events_data.append(e_fixed.model_dump(mode="json"))
+                        except Exception as err2:
+                            raise TypeError(
+                                f"Failed to serialize event {i} (type={e.event_type}) even after fixing: {err2}\n"
+                                f"Event details: {e_fixed}"
+                            ) from err2
+                    # Try to fix LLMCall tokens
+                    elif isinstance(e, LLMCall):
+                        in_tok = int(e.input_tokens) if isinstance(e.input_tokens, float) else e.input_tokens
+                        out_tok = int(e.output_tokens) if isinstance(e.output_tokens, float) else e.output_tokens
+                        e_fixed = LLMCall(
+                            trace_id=e.trace_id,
+                            span_id=e.span_id,
+                            parent_span_id=e.parent_span_id,
+                            timestamp=e.timestamp,
+                            node_name=e.node_name,
+                            metadata=e.metadata,
+                            model=e.model,
+                            input_messages=e.input_messages,
+                            output_message=e.output_message,
+                            input_tokens=in_tok,
+                            output_tokens=out_tok,
+                            cost=e.cost,
+                            duration_ms=e.duration_ms,
+                            prompt_summary=e.prompt_summary,
+                            response_summary=e.response_summary,
+                            system_message=e.system_message,
+                        )
+                        try:
+                            events_data.append(e_fixed.model_dump(mode="json"))
+                        except Exception as err2:
+                            raise TypeError(
+                                f"Failed to serialize event {i} (type={e.event_type}) even after fixing: {err2}\n"
+                                f"Event details: {e_fixed}"
+                            ) from err2
+                    else:
+                        raise TypeError(
+                            f"Failed to serialize event {i} (type={e.event_type}): {err}\n"
+                            f"Event details: {e}"
+                        ) from err
+                else:
+                    raise TypeError(
+                        f"Failed to serialize event {i} (type={e.event_type}): {err}\n"
+                        f"Event details: {e}"
+                    ) from err
         return json.dumps({
             "trace_id": self._trace_id,
-            "events": [e.model_dump(mode="json") for e in self._events],
+            "events": events_data,
         })
 
     @classmethod
