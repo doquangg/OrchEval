@@ -263,6 +263,8 @@ def _render_llm_detail(trace: Trace, focus_nodes: list[str] | None) -> str:
             lines.append("**Input messages**:")
             for msg in call.input_messages:
                 role = msg.get("role", "unknown")
+                if role == "system" and call.system_message:
+                    continue
                 content = msg.get("content", "")
                 # Truncate very long messages
                 if isinstance(content, str) and len(content) > 1000:

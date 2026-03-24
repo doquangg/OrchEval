@@ -446,6 +446,7 @@ def _js() -> str:
         }
         if (llm.input_messages && llm.input_messages.length) {
           llm.input_messages.forEach(function(msg) {
+            if (msg.role === 'system' && llm.system_message) return;
             html += '<div><span class="msg-role">' + escHtml(msg.role || 'user') + ':</span>';
             html += '<div class="msg-content">' + escHtml(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)) + '</div></div>';
           });
