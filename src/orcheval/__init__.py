@@ -30,7 +30,7 @@ from orcheval.events import (
     ToolCall,
 )
 from orcheval.report import FullReport, RunComparison, compare_runs, report
-from orcheval.trace import NodeInvocation, Trace
+from orcheval.trace import DEFAULT_OUTPUT_DIR, NodeInvocation, Trace
 
 __version__ = "0.1.0"
 
@@ -129,6 +129,7 @@ __all__ = [
     "Tracer",
     "Trace",
     "NodeInvocation",
+    "DEFAULT_OUTPUT_DIR",
     # Events
     "Event",
     "AnyEvent",

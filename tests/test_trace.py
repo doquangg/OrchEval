@@ -18,7 +18,7 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval.trace import NodeInvocation, Trace
+from orcheval.trace import DEFAULT_OUTPUT_DIR, NodeInvocation, Trace
 
 TRACE_ID = "test-trace-container"
 BASE_TIME = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
@@ -361,3 +361,61 @@ class TestTraceSerialization:
         data = {"trace_id": TRACE_ID, "events": [{"event_type": "nonexistent"}]}
         with pytest.raises(ValidationError):
             Trace.from_dict(data)
+
+
+class TestOutputDirectory:
+    """Export methods route bare filenames to orcheval_outputs/."""
+
+    @pytest.fixture()
+    def simple_trace(self) -> Trace:
+        return Trace(
+            events=[
+                NodeEntry(trace_id=TRACE_ID, node_name="a", timestamp=_ts(0)),
+                NodeExit(trace_id=TRACE_ID, node_name="a", timestamp=_ts(1), duration_ms=1000),
+            ],
+            trace_id=TRACE_ID,
+        )
+
+    def test_to_json_bare_filename(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = simple_trace.to_json("trace.json")
+        out = tmp_path / DEFAULT_OUTPUT_DIR / "trace.json"
+        assert out.exists()
+        assert json.loads(out.read_text(encoding="utf-8")) == json.loads(result)
+
+    def test_to_json_absolute_path(self, simple_trace: Trace, tmp_path) -> None:
+        out = tmp_path / "custom.json"
+        simple_trace.to_json(str(out))
+        assert out.exists()
+
+    def test_to_json_no_path(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = simple_trace.to_json()
+        assert isinstance(result, str)
+        assert not (tmp_path / DEFAULT_OUTPUT_DIR).exists()
+
+    def test_to_html_bare_filename(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        simple_trace.to_html("trace.html")
+        assert (tmp_path / DEFAULT_OUTPUT_DIR / "trace.html").exists()
+
+    def test_to_mermaid_bare_filename(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = simple_trace.to_mermaid("graph.mmd")
+        out = tmp_path / DEFAULT_OUTPUT_DIR / "graph.mmd"
+        assert out.exists()
+        assert out.read_text(encoding="utf-8") == result
+
+    def test_to_digest_bare_filename(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = simple_trace.to_digest(path="digest.md")
+        out = tmp_path / DEFAULT_OUTPUT_DIR / "digest.md"
+        assert out.exists()
+        assert out.read_text(encoding="utf-8") == result
+
+    def test_relative_path_with_dir_used_as_is(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "subdir").mkdir()
+        simple_trace.to_json("subdir/trace.json")
+        assert (tmp_path / "subdir" / "trace.json").exists()
+        assert not (tmp_path / DEFAULT_OUTPUT_DIR).exists()

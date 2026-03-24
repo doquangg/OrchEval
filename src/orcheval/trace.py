@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar, overload
 
 if TYPE_CHECKING:
@@ -18,6 +19,19 @@ from orcheval.events import (
 )
 
 E = TypeVar("E", bound=Event)
+
+DEFAULT_OUTPUT_DIR = "orcheval_outputs"
+
+
+def _resolve_output_path(path: str) -> Path:
+    """Resolve an output path, prepending the default output dir for bare filenames."""
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    if p.parent == Path("."):
+        # Bare filename like "trace.html" -> orcheval_outputs/trace.html
+        return Path(DEFAULT_OUTPUT_DIR) / p
+    return p
 
 
 class NodeInvocation(NamedTuple):
@@ -198,8 +212,12 @@ class Trace:
         events: list[Event] = [EVENT_ADAPTER.validate_python(e) for e in data["events"]]
         return cls(events=events, trace_id=trace_id)
 
-    def to_json(self) -> str:
-        """Serialize the trace to a JSON string."""
+    def to_json(self, path: str | None = None) -> str:
+        """Serialize the trace to a JSON string.
+
+        If *path* is given, also writes the JSON to that file.
+        Always returns the JSON string.
+        """
         from orcheval.events import PassBoundary, LLMCall
 
         events_data = []
@@ -275,10 +293,15 @@ class Trace:
                         f"Failed to serialize event {i} (type={e.event_type}): {err}\n"
                         f"Event details: {e}"
                     ) from err
-        return json.dumps({
+        result = json.dumps({
             "trace_id": self._trace_id,
             "events": events_data,
         })
+        if path is not None:
+            resolved = _resolve_output_path(path)
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            resolved.write_text(result, encoding="utf-8")
+        return result
 
     @classmethod
     def from_json(cls, data: str) -> Trace:
@@ -299,16 +322,23 @@ class Trace:
 
     # --- Export ---
 
-    def to_mermaid(self) -> str:
+    def to_mermaid(self, path: str | None = None) -> str:
         """Produce a Mermaid ``graph LR`` string showing execution topology.
 
         Edges come from ``RoutingDecision`` events when present, otherwise
         inferred from consecutive node transitions.  Nodes show invocation
         counts and error nodes are styled distinctly.
+
+        If *path* is given, also writes the Mermaid text to that file.
         """
         from orcheval.export.mermaid import build_mermaid
 
-        return build_mermaid(self)
+        result = build_mermaid(self)
+        if path is not None:
+            resolved = _resolve_output_path(path)
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            resolved.write_text(result, encoding="utf-8")
+        return result
 
     def to_dataframe(self) -> Any:
         """Produce a pandas DataFrame with one row per event.
@@ -325,6 +355,7 @@ class Trace:
     def to_digest(
         self,
         *,
+        path: str | None = None,
         include_llm_content: bool = False,
         focus_nodes: list[str] | None = None,
         reports: Any = None,
@@ -332,7 +363,10 @@ class Trace:
     ) -> str:
         """Produce a compact narrative text summary optimized for LLM analysis.
 
+        If *path* is given, also writes the digest to that file.
+
         Args:
+            path: Optional file path to write the digest to.
             include_llm_content: Include full LLM prompt/response content.
             focus_nodes: Only show these nodes in detail; collapse others.
             reports: Pre-computed ``FullReport`` to avoid redundant computation.
@@ -340,13 +374,18 @@ class Trace:
         """
         from orcheval.export.digest import build_digest
 
-        return build_digest(
+        result = build_digest(
             self,
             include_llm_content=include_llm_content,
             focus_nodes=focus_nodes,
             reports=reports,
             max_chars=max_chars,
         )
+        if path is not None:
+            resolved = _resolve_output_path(path)
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            resolved.write_text(result, encoding="utf-8")
+        return result
 
     def to_html(
         self,
@@ -367,7 +406,7 @@ class Trace:
 
         html = build_html(self, reports=reports)
         if path is not None:
-            from pathlib import Path as P
-
-            P(path).write_text(html, encoding="utf-8")
+            resolved = _resolve_output_path(path)
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            resolved.write_text(html, encoding="utf-8")
         return html

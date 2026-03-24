@@ -117,7 +117,7 @@ Pattern types: `prompt_growth`, `repeated_output`, `redundant_tool_call`, `syste
 ## HTML Visualization
 
 ```python
-trace.to_html("trace.html")
+trace.to_html("trace.html")  # writes to orcheval_outputs/trace.html
 ```
 
 Generates a self-contained HTML file (no external dependencies) with:
@@ -125,7 +125,9 @@ Generates a self-contained HTML file (no external dependencies) with:
 - Interactive waterfall timeline with swimlane layout per node
 - Click-to-expand detail panels showing LLM calls, tool calls, errors, and state diffs
 
-Open `trace.html` in any browser.
+All export methods that accept a bare filename (e.g. `"trace.html"`) write to the `orcheval_outputs/` directory by default. Paths with a directory component or absolute paths are used as-is.
+
+Open `orcheval_outputs/trace.html` in any browser.
 
 ## Text Digest
 
