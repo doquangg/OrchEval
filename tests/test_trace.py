@@ -419,3 +419,48 @@ class TestOutputDirectory:
         simple_trace.to_json("subdir/trace.json")
         assert (tmp_path / "subdir" / "trace.json").exists()
         assert not (tmp_path / DEFAULT_OUTPUT_DIR).exists()
+
+
+class TestFromJsonFile:
+    """Loading traces and reports from JSON files."""
+
+    @pytest.fixture()
+    def simple_trace(self) -> Trace:
+        return Trace(
+            events=[
+                NodeEntry(trace_id=TRACE_ID, node_name="a", timestamp=_ts(0)),
+                NodeExit(trace_id=TRACE_ID, node_name="a", timestamp=_ts(1), duration_ms=1000),
+            ],
+            trace_id=TRACE_ID,
+        )
+
+    def test_trace_from_json_file(self, simple_trace: Trace, tmp_path) -> None:
+        json_path = tmp_path / "trace.json"
+        json_str = simple_trace.to_json(str(json_path))
+        loaded = Trace.from_json_file(json_path)
+        assert loaded.trace_id == simple_trace.trace_id
+        assert len(loaded) == len(simple_trace)
+
+    def test_html_from_files_trace_only(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        from orcheval import html_from_files
+
+        monkeypatch.chdir(tmp_path)
+        trace_path = tmp_path / "trace.json"
+        simple_trace.to_json(str(trace_path))
+        html = html_from_files(trace_path, output_path="out.html")
+        assert isinstance(html, str)
+        assert "<!DOCTYPE html>" in html
+        assert (tmp_path / DEFAULT_OUTPUT_DIR / "out.html").exists()
+
+    def test_html_from_files_with_report(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+        from orcheval import FullReport, html_from_files, report
+
+        monkeypatch.chdir(tmp_path)
+        trace_path = tmp_path / "trace.json"
+        simple_trace.to_json(str(trace_path))
+        full = report(simple_trace)
+        report_path = tmp_path / "report.json"
+        report_path.write_text(full.model_dump_json(), encoding="utf-8")
+        html = html_from_files(trace_path, report_path, output_path="out.html")
+        assert isinstance(html, str)
+        assert (tmp_path / DEFAULT_OUTPUT_DIR / "out.html").exists()

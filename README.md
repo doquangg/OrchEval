@@ -304,16 +304,36 @@ Same `Trace` object, same analysis, regardless of framework.
 
 ```python
 # Serialize
-json_str = trace.to_json()
+json_str = trace.to_json()          # returns JSON string
+trace.to_json("trace.json")         # also writes to orcheval_outputs/trace.json
 d = trace.to_dict()
 
 # Deserialize
 from orcheval import Trace
-loaded = Trace.from_json(json_str)
+loaded = Trace.from_json(json_str)          # from string
+loaded = Trace.from_json_file("trace.json") # from file
 loaded = Trace.from_dict(d)
 
 # Merge multiple traces
 combined = Trace.merge(trace1, trace2, trace3)
+```
+
+### Generate HTML from saved files
+
+```python
+from orcheval import html_from_files
+
+# From trace file only (report auto-generated)
+html_from_files("orcheval_outputs/trace.json", output_path="trace.html")
+
+# From trace + pre-computed report
+html_from_files("orcheval_outputs/trace.json", "report.json", output_path="trace.html")
+
+# Or load individually
+from orcheval import Trace, FullReport
+trace = Trace.from_json_file("orcheval_outputs/trace.json")
+report = FullReport.from_json_file("report.json")
+trace.to_html("trace.html", reports=report)
 ```
 
 ## What OrchEval Analyzes

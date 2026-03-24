@@ -6,6 +6,7 @@ routing audits, convergence tracking, timeline views, and retry analysis.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -59,6 +60,11 @@ class FullReport(BaseModel):
     timeline: TimelineReport
     retries: RetryReport
     llm_patterns: LLMPatternsReport
+
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> FullReport:
+        """Load a report from a JSON file."""
+        return cls.model_validate_json(Path(path).read_text(encoding="utf-8"))
 
 
 def report(trace: Trace) -> FullReport:

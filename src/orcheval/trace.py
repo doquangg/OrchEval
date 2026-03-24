@@ -308,6 +308,11 @@ class Trace:
         """Deserialize a trace from a JSON string produced by to_json()."""
         return cls.from_dict(json.loads(data))
 
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> Trace:
+        """Load a trace from a JSON file produced by to_json()."""
+        return cls.from_json(Path(path).read_text(encoding="utf-8"))
+
     # --- Comparison ---
 
     def compare(self, other: Trace, **kwargs: Any) -> Any:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 from orcheval.adapters.base import BaseAdapter
@@ -124,12 +125,36 @@ class Tracer:
         self._adapter.reset()
 
 
+def html_from_files(
+    trace_path: str | Path,
+    report_path: str | Path | None = None,
+    output_path: str = "trace.html",
+) -> str:
+    """Generate HTML visualization from saved JSON files.
+
+    Args:
+        trace_path: Path to a trace JSON file (from trace.to_json()).
+        report_path: Optional path to a report JSON file. If not provided,
+            the report is recomputed from the trace.
+        output_path: Where to write the HTML file.
+
+    Returns:
+        The HTML string.
+    """
+    trace = Trace.from_json_file(trace_path)
+    reports = None
+    if report_path is not None:
+        reports = FullReport.from_json_file(report_path)
+    return trace.to_html(output_path, reports=reports)
+
+
 __all__ = [
     # Core
     "Tracer",
     "Trace",
     "NodeInvocation",
     "DEFAULT_OUTPUT_DIR",
+    "html_from_files",
     # Events
     "Event",
     "AnyEvent",

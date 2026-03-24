@@ -200,6 +200,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
                   padding-right: 12px; text-align: right; overflow: hidden;
                   text-overflow: ellipsis; white-space: nowrap; }
 .swimlane-track { position: relative; flex: 1; height: 32px; }
+
+/* Span bars — base style */
 .span-bar { position: absolute; height: 28px; top: 2px; border-radius: 4px;
             cursor: pointer; display: flex; align-items: center; padding: 0 6px;
             font-size: 11px; color: #fff; font-weight: 500; overflow: hidden;
@@ -209,15 +211,32 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .span-bar.has-error { background-image: repeating-linear-gradient(
     45deg, transparent, transparent 4px, rgba(255,255,255,0.25) 4px, rgba(255,255,255,0.25) 8px); }
 .span-bar.open-ended { border-right: 2px dashed rgba(255,255,255,0.6); }
+
+/* Narrow span bars — for very short durations relative to total trace.
+   Text is hidden; a visible pip is rendered instead of an invisible sliver. */
+.span-bar.narrow { min-width: 6px; padding: 0; border-radius: 3px; }
+.span-bar.narrow .bar-label { display: none; }
+
+/* Medium span bars — wide enough to see but text would be clipped */
+.span-bar.medium .bar-label { display: none; }
+
+/* Wide span bars always show the label */
+.span-bar .bar-label { pointer-events: none; }
+
+/* Child event markers */
 .child-marker { position: absolute; width: 8px; height: 8px; border-radius: 50%;
                 top: 50%; transform: translate(-50%, -50%); border: 1.5px solid #fff;
                 cursor: pointer; z-index: 1; }
 .child-marker.error { background: #e15759 !important; }
 
 /* Tooltip */
-.tooltip { position: fixed; background: #333; color: #fff; padding: 6px 10px;
-           border-radius: 4px; font-size: 12px; pointer-events: none;
-           z-index: 1000; max-width: 300px; display: none; }
+.tooltip { position: fixed; background: #1a1a1a; color: #fff; padding: 8px 12px;
+           border-radius: 6px; font-size: 12px; pointer-events: none;
+           z-index: 1000; max-width: 340px; display: none;
+           box-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.5; }
+.tooltip .tt-title { font-weight: 700; margin-bottom: 2px; }
+.tooltip .tt-row { color: #ccc; }
+.tooltip .tt-row strong { color: #fff; }
 
 /* Detail panel */
 #detail-panel { display: none; background: #fff; border-radius: 8px;
@@ -255,23 +274,47 @@ def _js() -> str:
     """Return the inline JavaScript."""
     return """
 (function() {
-  const D = TRACE_DATA;
-  const panel = document.getElementById('detail-panel');
-  const detailBody = document.getElementById('detail-body');
-  const detailTitle = document.getElementById('detail-title');
+  var D = TRACE_DATA;
+  var panel = document.getElementById('detail-panel');
+  var detailBody = document.getElementById('detail-body');
+  var detailTitle = document.getElementById('detail-title');
+
+  // --- Utility: format duration for display ---
+  function fmtDur(ms) {
+    if (ms == null) return '';
+    if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
+    if (ms >= 1) return ms.toFixed(0) + 'ms';
+    return ms.toFixed(2) + 'ms';
+  }
+
+  // --- Utility: format duration with full precision for tooltips ---
+  function fmtDurFull(ms) {
+    if (ms == null) return 'in progress';
+    if (ms >= 60000) return (ms / 60000).toFixed(1) + 'min (' + ms.toFixed(0) + 'ms)';
+    if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
+    return ms.toFixed(1) + 'ms';
+  }
+
+  // --- Utility: format percentage of total duration ---
+  function fmtPct(ms, total) {
+    if (ms == null || total == null || total === 0) return '';
+    var pct = (ms / total) * 100;
+    if (pct < 0.01) return '<0.01%';
+    if (pct < 1) return pct.toFixed(2) + '%';
+    return pct.toFixed(1) + '%';
+  }
 
   // Summary panel
-  const sp = document.getElementById('summary-panel');
+  var sp = document.getElementById('summary-panel');
   function addMetric(label, value, isError) {
-    const card = document.createElement('div');
+    var card = document.createElement('div');
     card.className = 'metric-card' + (isError ? ' metric-error' : '');
     card.innerHTML = '<div class="metric-value">' + value + '</div>'
                    + '<div class="metric-label">' + label + '</div>';
     sp.appendChild(card);
   }
 
-  if (D.total_duration_ms != null) addMetric('Duration', D.total_duration_ms.toFixed(0) + 'ms');
-  if (D.total_cost != null) addMetric('Cost', '$' + D.total_cost.toFixed(4));
+  if (D.total_duration_ms != null) addMetric('Duration', fmtDur(D.total_duration_ms));
   if (D.total_tokens) addMetric('Tokens', D.total_tokens.total.toLocaleString());
   addMetric('Nodes', D.node_count);
   addMetric('Errors', D.error_count, D.error_count > 0);
@@ -284,49 +327,46 @@ def _js() -> str:
   }
 
   // Time axis
-  const totalMs = D.total_duration_ms || 1;
-  const axisEl = document.getElementById('time-axis');
-  const tickCount = Math.min(10, Math.max(2, Math.ceil(totalMs / 500)));
-  const tickInterval = totalMs / tickCount;
+  var totalMs = D.total_duration_ms || 1;
+  var axisEl = document.getElementById('time-axis');
+  var tickCount = Math.min(10, Math.max(2, Math.ceil(totalMs / 500)));
+  var tickInterval = totalMs / tickCount;
 
-  // Round tick interval to a nice number
   function niceInterval(v) {
-    const mag = Math.pow(10, Math.floor(Math.log10(v)));
-    const residual = v / mag;
+    var mag = Math.pow(10, Math.floor(Math.log10(v)));
+    var residual = v / mag;
     if (residual <= 1.5) return mag;
     if (residual <= 3.5) return 2 * mag;
     if (residual <= 7.5) return 5 * mag;
     return 10 * mag;
   }
-  const nice = niceInterval(tickInterval);
-  for (let t = 0; t <= totalMs; t += nice) {
-    const pct = (t / totalMs) * 100;
+  var nice = niceInterval(tickInterval);
+  for (var t = 0; t <= totalMs; t += nice) {
+    var pct = (t / totalMs) * 100;
     if (pct > 100) break;
-    const tick = document.createElement('div');
+    var tick = document.createElement('div');
     tick.className = 'time-tick';
     tick.style.left = pct + '%';
-    tick.textContent = t >= 1000 ? (t / 1000).toFixed(1) + 's' : t.toFixed(0) + 'ms';
+    tick.textContent = fmtDur(t);
     axisEl.appendChild(tick);
   }
 
   // Swimlanes
-  const lanesEl = document.getElementById('swimlanes');
-  // Deduplicate node names preserving first-seen order
-  const nodeOrder = [];
+  var lanesEl = document.getElementById('swimlanes');
+  var nodeOrder = [];
   D.spans.forEach(function(s) {
     if (nodeOrder.indexOf(s.node_name) === -1) nodeOrder.push(s.node_name);
   });
 
-  // Create one swimlane per unique node
-  const laneEls = {};
+  var laneEls = {};
   nodeOrder.forEach(function(name) {
-    const lane = document.createElement('div');
+    var lane = document.createElement('div');
     lane.className = 'swimlane';
-    const label = document.createElement('div');
+    var label = document.createElement('div');
     label.className = 'swimlane-label';
     label.textContent = name;
     label.title = name;
-    const track = document.createElement('div');
+    var track = document.createElement('div');
     track.className = 'swimlane-track';
     lane.appendChild(label);
     lane.appendChild(track);
@@ -335,38 +375,75 @@ def _js() -> str:
   });
 
   // Tooltip
-  const tooltip = document.createElement('div');
+  var tooltip = document.createElement('div');
   tooltip.className = 'tooltip';
   document.body.appendChild(tooltip);
 
+  // --- Width classification thresholds (as % of total width) ---
+  // Bars below NARROW_THRESHOLD get no text and a pip-like appearance.
+  // Bars between NARROW and MEDIUM get no text but normal bar shape.
+  // Bars above MEDIUM_THRESHOLD display their duration label.
+  var NARROW_THRESHOLD = 0.8;   // < 0.8% of total = narrow pip
+  var MEDIUM_THRESHOLD = 3.0;   // < 3% of total  = bar visible but no label
+
   // Render span bars
   D.spans.forEach(function(span) {
-    const track = laneEls[span.node_name];
+    var track = laneEls[span.node_name];
     if (!track) return;
 
-    const startPct = (span.start_ms / totalMs) * 100;
-    const endMs = span.end_ms != null ? span.end_ms : totalMs;
-    const widthPct = Math.max(0.3, ((endMs - span.start_ms) / totalMs) * 100);
+    var startPct = (span.start_ms / totalMs) * 100;
+    var endMs = span.end_ms != null ? span.end_ms : totalMs;
+    var rawWidthPct = ((endMs - span.start_ms) / totalMs) * 100;
+    var widthPct = Math.max(0.3, rawWidthPct);
 
-    const bar = document.createElement('div');
+    var bar = document.createElement('div');
     bar.className = 'span-bar';
     bar.style.left = startPct + '%';
     bar.style.width = widthPct + '%';
     bar.style.background = D.node_colors[span.node_name] || '#999';
 
-    const detail = D.events_detail[span.span_id];
+    var detail = D.events_detail[span.span_id];
     if (detail && detail.errors.length > 0) bar.classList.add('has-error');
     if (span.end_ms == null) bar.classList.add('open-ended');
 
-    const durText = span.duration_ms != null ? span.duration_ms.toFixed(0) + 'ms' : '';
-    bar.textContent = durText;
+    // Classify bar width and add appropriate CSS class
+    if (rawWidthPct < NARROW_THRESHOLD) {
+      bar.classList.add('narrow');
+    } else if (rawWidthPct < MEDIUM_THRESHOLD) {
+      bar.classList.add('medium');
+    }
+
+    // Always create a label span (CSS controls visibility via .narrow/.medium classes)
+    var durText = span.duration_ms != null ? fmtDur(span.duration_ms) : '';
+    var labelEl = document.createElement('span');
+    labelEl.className = 'bar-label';
+    labelEl.textContent = durText;
+    bar.appendChild(labelEl);
+
     bar.setAttribute('data-span-id', span.span_id);
 
-    // Hover
+    // --- Enhanced tooltip ---
     bar.addEventListener('mouseenter', function(e) {
-      const childCount = span.children ? span.children.length : 0;
-      tooltip.innerHTML = '<strong>' + span.node_name + '</strong><br>'
-        + (durText || 'in progress') + ' &middot; ' + childCount + ' events';
+      var childCount = span.children ? span.children.length : 0;
+      var llmCount = detail ? detail.llm_calls.length : 0;
+      var toolCount = detail ? detail.tool_calls.length : 0;
+      var errCount = detail ? detail.errors.length : 0;
+
+      var html = '<div class="tt-title">' + escHtml(span.node_name) + '</div>';
+      html += '<div class="tt-row"><strong>' + fmtDurFull(span.duration_ms) + '</strong>';
+      html += ' &middot; ' + fmtPct(span.duration_ms, totalMs) + ' of trace</div>';
+
+      var parts = [];
+      if (llmCount > 0) parts.push(llmCount + ' LLM call' + (llmCount > 1 ? 's' : ''));
+      if (toolCount > 0) parts.push(toolCount + ' tool call' + (toolCount > 1 ? 's' : ''));
+      if (errCount > 0) parts.push(errCount + ' error' + (errCount > 1 ? 's' : ''));
+      if (parts.length === 0 && childCount > 0) parts.push(childCount + ' event' + (childCount > 1 ? 's' : ''));
+
+      if (parts.length > 0) {
+        html += '<div class="tt-row">' + parts.join(' &middot; ') + '</div>';
+      }
+
+      tooltip.innerHTML = html;
       tooltip.style.display = 'block';
     });
     bar.addEventListener('mousemove', function(e) {
@@ -377,19 +454,17 @@ def _js() -> str:
       tooltip.style.display = 'none';
     });
 
-    // Click
+    // Click -> detail panel
     bar.addEventListener('click', function() { showDetail(span); });
 
-    // Child event markers
-    if (span.children && span.duration_ms) {
-      const spanDur = span.duration_ms || (endMs - span.start_ms) || 1;
+    // Child event markers — only on bars wide enough to show them meaningfully
+    if (span.children && span.duration_ms && rawWidthPct >= NARROW_THRESHOLD) {
+      var spanDur = span.duration_ms || (endMs - span.start_ms) || 1;
       span.children.forEach(function(child) {
         if (child.event_type === 'node_entry' || child.event_type === 'node_exit') return;
-        const relOffset = child.offset_ms - span.start_ms;
-        // Clamp to [0, 100] — child timestamps may fall slightly outside the parent span
-        // due to clock skew or rounding, so we defensively bound the position.
-        const posPct = Math.max(0, Math.min(100, (relOffset / spanDur) * 100));
-        const marker = document.createElement('div');
+        var relOffset = child.offset_ms - span.start_ms;
+        var posPct = Math.max(0, Math.min(100, (relOffset / spanDur) * 100));
+        var marker = document.createElement('div');
         marker.className = 'child-marker';
         if (child.event_type === 'error_event') marker.classList.add('error');
         marker.style.left = posPct + '%';
@@ -404,14 +479,15 @@ def _js() -> str:
 
   // Detail panel
   function showDetail(span) {
-    const detail = D.events_detail[span.span_id];
-    detailTitle.textContent = span.node_name + ' (' + (span.duration_ms != null ? span.duration_ms.toFixed(0) + 'ms' : 'no duration') + ')';
-    let html = '';
+    var detail = D.events_detail[span.span_id];
+    var durStr = span.duration_ms != null ? fmtDurFull(span.duration_ms) : 'no duration';
+    detailTitle.textContent = span.node_name + ' (' + durStr + ')';
+    var html = '';
 
     // State diff
     if (detail && detail.state_diff) {
-      const diff = detail.state_diff;
-      const hasChanges = (diff.added && diff.added.length) || (diff.removed && diff.removed.length) || (diff.modified && diff.modified.length);
+      var diff = detail.state_diff;
+      var hasChanges = (diff.added && diff.added.length) || (diff.removed && diff.removed.length) || (diff.modified && diff.modified.length);
       if (hasChanges) {
         html += '<div class="detail-section state-diff"><h4>State Changes</h4>';
         if (diff.added && diff.added.length) html += '<div class="added">+ Added: ' + diff.added.join(', ') + '</div>';
@@ -437,9 +513,9 @@ def _js() -> str:
       detail.llm_calls.forEach(function(llm) {
         html += '<div style="margin-bottom:12px;padding:8px;background:#fafafa;border-radius:4px;">';
         html += '<strong>' + (llm.model || 'unknown') + '</strong>';
-        if (llm.input_tokens != null) html += ' &middot; ' + llm.input_tokens + '→' + (llm.output_tokens || 0) + ' tokens';
+        if (llm.input_tokens != null) html += ' &middot; ' + llm.input_tokens + '&rarr;' + (llm.output_tokens || 0) + ' tokens';
         if (llm.cost != null) html += ' &middot; $' + llm.cost.toFixed(4);
-        if (llm.duration_ms != null) html += ' &middot; ' + llm.duration_ms.toFixed(0) + 'ms';
+        if (llm.duration_ms != null) html += ' &middot; ' + fmtDur(llm.duration_ms);
         if (llm.system_message) {
           html += '<div style="margin-top:6px"><span class="msg-role">System:</span>';
           html += '<div class="msg-content">' + escHtml(llm.system_message) + '</div></div>';
@@ -467,7 +543,7 @@ def _js() -> str:
       detail.tool_calls.forEach(function(tc) {
         html += '<div style="margin-bottom:8px;">';
         html += '<span class="tool-badge">' + escHtml(tc.tool_name) + '</span>';
-        if (tc.duration_ms != null) html += ' ' + tc.duration_ms.toFixed(0) + 'ms';
+        if (tc.duration_ms != null) html += ' ' + fmtDur(tc.duration_ms);
         if (tc.tool_input && Object.keys(tc.tool_input).length) {
           html += '<div class="msg-content">' + escHtml(JSON.stringify(tc.tool_input, null, 2)) + '</div>';
         }
@@ -496,7 +572,7 @@ def _js() -> str:
       html += '<div class="detail-section"><h4>Events Timeline</h4>';
       span.children.forEach(function(child) {
         html += '<div style="padding:2px 0;">';
-        html += '<span style="color:#999;font-size:11px;">' + child.offset_ms.toFixed(0) + 'ms</span> ';
+        html += '<span style="color:#999;font-size:11px;">' + fmtDur(child.offset_ms) + '</span> ';
         html += escHtml(child.summary);
         html += '</div>';
       });
