@@ -188,45 +188,53 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 #waterfall-container { background: #fff; border-radius: 8px; padding: 16px;
                        box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px;
                        overflow-x: auto; }
-#time-axis { position: relative; height: 24px; margin-left: 140px; margin-bottom: 8px;
+#time-axis { position: relative; height: 24px; margin-left: 160px; margin-bottom: 8px;
              border-bottom: 1px solid #ddd; }
 .time-tick { position: absolute; top: 0; font-size: 11px; color: #999;
              transform: translateX(-50%); }
 .time-tick::after { content: ''; position: absolute; left: 50%; top: 16px;
                     width: 1px; height: 6px; background: #ccc; }
 #swimlanes { position: relative; }
-.swimlane { display: flex; align-items: center; height: 44px; border-bottom: 1px solid #f0f0f0; }
-.swimlane-label { width: 140px; flex-shrink: 0; font-size: 13px; font-weight: 600;
-                  padding-right: 12px; text-align: right; overflow: hidden;
-                  text-overflow: ellipsis; white-space: nowrap; }
-.swimlane-track { position: relative; flex: 1; height: 32px; }
 
-/* Span bars — base style */
-.span-bar { position: absolute; height: 28px; top: 2px; border-radius: 4px;
+/* Swimlane — height set dynamically per lane based on sub-row count */
+.swimlane { display: flex; align-items: stretch; min-height: 36px;
+            border-bottom: 1px solid #f0f0f0; }
+.swimlane-label { width: 160px; flex-shrink: 0; font-size: 13px; font-weight: 600;
+                  padding-right: 12px; text-align: right; overflow: hidden;
+                  text-overflow: ellipsis; white-space: nowrap;
+                  display: flex; align-items: center; justify-content: flex-end; }
+.swimlane-track { position: relative; flex: 1; }
+
+/* Span bars */
+.span-bar { position: absolute; border-radius: 4px;
             cursor: pointer; display: flex; align-items: center; padding: 0 6px;
             font-size: 11px; color: #fff; font-weight: 500; overflow: hidden;
             white-space: nowrap; text-overflow: ellipsis; min-width: 4px;
-            transition: opacity 0.15s; }
-.span-bar:hover { opacity: 0.85; }
+            transition: opacity 0.15s, box-shadow 0.15s; z-index: 1; }
+.span-bar:hover { opacity: 0.85; z-index: 10;
+                  box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
 .span-bar.has-error { background-image: repeating-linear-gradient(
     45deg, transparent, transparent 4px, rgba(255,255,255,0.25) 4px, rgba(255,255,255,0.25) 8px); }
 .span-bar.open-ended { border-right: 2px dashed rgba(255,255,255,0.6); }
 
-/* Narrow span bars — for very short durations relative to total trace.
-   Text is hidden; a visible pip is rendered instead of an invisible sliver. */
+/* Narrow bars — very short relative to trace */
 .span-bar.narrow { min-width: 6px; padding: 0; border-radius: 3px; }
 .span-bar.narrow .bar-label { display: none; }
+.span-bar.narrow .bar-invocation { display: none; }
 
-/* Medium span bars — wide enough to see but text would be clipped */
+/* Medium bars — visible but text would clip */
 .span-bar.medium .bar-label { display: none; }
+.span-bar.medium .bar-invocation { display: none; }
 
-/* Wide span bars always show the label */
+/* Labels */
 .span-bar .bar-label { pointer-events: none; }
+.span-bar .bar-invocation { pointer-events: none; font-size: 10px; opacity: 0.75;
+                             margin-right: 4px; font-weight: 400; }
 
-/* Child event markers */
+/* Child markers */
 .child-marker { position: absolute; width: 8px; height: 8px; border-radius: 50%;
                 top: 50%; transform: translate(-50%, -50%); border: 1.5px solid #fff;
-                cursor: pointer; z-index: 1; }
+                cursor: pointer; z-index: 2; }
 .child-marker.error { background: #e15759 !important; }
 
 /* Tooltip */
@@ -272,14 +280,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 def _js() -> str:
     """Return the inline JavaScript."""
-    return """
+    return r"""
 (function() {
   var D = TRACE_DATA;
   var panel = document.getElementById('detail-panel');
   var detailBody = document.getElementById('detail-body');
   var detailTitle = document.getElementById('detail-title');
 
-  // --- Utility: format duration for display ---
+  // ===== Utility functions =====
+
   function fmtDur(ms) {
     if (ms == null) return '';
     if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
@@ -287,7 +296,6 @@ def _js() -> str:
     return ms.toFixed(2) + 'ms';
   }
 
-  // --- Utility: format duration with full precision for tooltips ---
   function fmtDurFull(ms) {
     if (ms == null) return 'in progress';
     if (ms >= 60000) return (ms / 60000).toFixed(1) + 'min (' + ms.toFixed(0) + 'ms)';
@@ -295,7 +303,6 @@ def _js() -> str:
     return ms.toFixed(1) + 'ms';
   }
 
-  // --- Utility: format percentage of total duration ---
   function fmtPct(ms, total) {
     if (ms == null || total == null || total === 0) return '';
     var pct = (ms / total) * 100;
@@ -304,7 +311,14 @@ def _js() -> str:
     return pct.toFixed(1) + '%';
   }
 
-  // Summary panel
+  function escHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ===== Summary panel =====
+
   var sp = document.getElementById('summary-panel');
   function addMetric(label, value, isError) {
     var card = document.createElement('div');
@@ -319,18 +333,16 @@ def _js() -> str:
   addMetric('Nodes', D.node_count);
   addMetric('Errors', D.error_count, D.error_count > 0);
 
-  // Empty state
   if (!D.spans || D.spans.length === 0) {
     document.getElementById('waterfall-container').innerHTML =
       '<div class="empty-state">No trace data to display.</div>';
     return;
   }
 
-  // Time axis
+  // ===== Time axis =====
+
   var totalMs = D.total_duration_ms || 1;
   var axisEl = document.getElementById('time-axis');
-  var tickCount = Math.min(10, Math.max(2, Math.ceil(totalMs / 500)));
-  var tickInterval = totalMs / tickCount;
 
   function niceInterval(v) {
     var mag = Math.pow(10, Math.floor(Math.log10(v)));
@@ -340,7 +352,9 @@ def _js() -> str:
     if (residual <= 7.5) return 5 * mag;
     return 10 * mag;
   }
-  var nice = niceInterval(tickInterval);
+
+  var tickCount = Math.min(10, Math.max(2, Math.ceil(totalMs / 500)));
+  var nice = niceInterval(totalMs / tickCount);
   for (var t = 0; t <= totalMs; t += nice) {
     var pct = (t / totalMs) * 100;
     if (pct > 100) break;
@@ -351,69 +365,149 @@ def _js() -> str:
     axisEl.appendChild(tick);
   }
 
-  // Swimlanes
-  var lanesEl = document.getElementById('swimlanes');
+  // ===== Sub-row layout: stack overlapping spans within each node =====
+  //
+  // For each node, spans are assigned to the lowest sub-row where they
+  // don't overlap any existing span.  This prevents bars from piling on
+  // top of each other.  The result is stored in `subRowMap` keyed by
+  // span_id, and `subRowCountByNode` tracks how many rows each node needs.
+
   var nodeOrder = [];
   D.spans.forEach(function(s) {
     if (nodeOrder.indexOf(s.node_name) === -1) nodeOrder.push(s.node_name);
   });
 
+  var spansByNode = {};
+  nodeOrder.forEach(function(n) { spansByNode[n] = []; });
+  D.spans.forEach(function(s) { spansByNode[s.node_name].push(s); });
+
+  var invCountByNode = {};
+  nodeOrder.forEach(function(n) { invCountByNode[n] = spansByNode[n].length; });
+
+  var subRowMap = {};           // span_id -> sub-row index (0-based)
+  var subRowCountByNode = {};   // node_name -> number of sub-rows needed
+
+  var GAP_MS = totalMs * 0.003; // tiny gap to prevent visually touching bars
+
+  nodeOrder.forEach(function(nodeName) {
+    var spans = spansByNode[nodeName];
+    var rowEnds = [];  // rowEnds[r] = end_ms of the last span placed in row r
+
+    spans.forEach(function(span) {
+      var sStart = span.start_ms;
+      var sEnd = span.end_ms != null ? span.end_ms : totalMs;
+
+      var placed = false;
+      for (var r = 0; r < rowEnds.length; r++) {
+        if (sStart >= rowEnds[r] + GAP_MS) {
+          subRowMap[span.span_id] = r;
+          rowEnds[r] = sEnd;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        subRowMap[span.span_id] = rowEnds.length;
+        rowEnds.push(sEnd);
+      }
+    });
+
+    subRowCountByNode[nodeName] = rowEnds.length || 1;
+  });
+
+  // ===== Sizing constants =====
+
+  var ROW_HEIGHT = 24;    // px per sub-row bar
+  var ROW_GAP = 4;        // px gap between sub-rows
+  var LANE_PAD = 4;       // px top/bottom padding inside swimlane track
+
+  var NARROW_THRESHOLD = 0.8;   // % of total
+  var MEDIUM_THRESHOLD = 3.0;   // % of total
+
+  // ===== Create swimlanes =====
+
+  var lanesEl = document.getElementById('swimlanes');
   var laneEls = {};
+
   nodeOrder.forEach(function(name) {
+    var numRows = subRowCountByNode[name];
+    var trackHeight = numRows * ROW_HEIGHT + Math.max(0, numRows - 1) * ROW_GAP + LANE_PAD * 2;
+
     var lane = document.createElement('div');
     lane.className = 'swimlane';
+    lane.style.height = trackHeight + 'px';
+
     var label = document.createElement('div');
     label.className = 'swimlane-label';
     label.textContent = name;
     label.title = name;
+
     var track = document.createElement('div');
     track.className = 'swimlane-track';
+    track.style.height = trackHeight + 'px';
+
     lane.appendChild(label);
     lane.appendChild(track);
     lanesEl.appendChild(lane);
     laneEls[name] = track;
   });
 
-  // Tooltip
+  // ===== Tooltip =====
+
   var tooltip = document.createElement('div');
   tooltip.className = 'tooltip';
   document.body.appendChild(tooltip);
 
-  // --- Width classification thresholds (as % of total width) ---
-  // Bars below NARROW_THRESHOLD get no text and a pip-like appearance.
-  // Bars between NARROW and MEDIUM get no text but normal bar shape.
-  // Bars above MEDIUM_THRESHOLD display their duration label.
-  var NARROW_THRESHOLD = 0.8;   // < 0.8% of total = narrow pip
-  var MEDIUM_THRESHOLD = 3.0;   // < 3% of total  = bar visible but no label
+  // ===== Render span bars =====
 
-  // Render span bars
+  var invIndexByNode = {};
+  nodeOrder.forEach(function(n) { invIndexByNode[n] = 0; });
+
   D.spans.forEach(function(span) {
     var track = laneEls[span.node_name];
     if (!track) return;
 
+    var invIdx = invIndexByNode[span.node_name]++;
+    var invTotal = invCountByNode[span.node_name];
+    var subRow = subRowMap[span.span_id] || 0;
+
+    // Horizontal geometry
     var startPct = (span.start_ms / totalMs) * 100;
     var endMs = span.end_ms != null ? span.end_ms : totalMs;
     var rawWidthPct = ((endMs - span.start_ms) / totalMs) * 100;
     var widthPct = Math.max(0.3, rawWidthPct);
 
+    // Vertical geometry — each sub-row gets its own band
+    var topPx = LANE_PAD + subRow * (ROW_HEIGHT + ROW_GAP);
+
     var bar = document.createElement('div');
     bar.className = 'span-bar';
     bar.style.left = startPct + '%';
     bar.style.width = widthPct + '%';
+    bar.style.top = topPx + 'px';
+    bar.style.height = ROW_HEIGHT + 'px';
     bar.style.background = D.node_colors[span.node_name] || '#999';
 
     var detail = D.events_detail[span.span_id];
     if (detail && detail.errors.length > 0) bar.classList.add('has-error');
     if (span.end_ms == null) bar.classList.add('open-ended');
 
-    // Classify bar width and add appropriate CSS class
+    // Width classification
     if (rawWidthPct < NARROW_THRESHOLD) {
       bar.classList.add('narrow');
     } else if (rawWidthPct < MEDIUM_THRESHOLD) {
       bar.classList.add('medium');
     }
 
-    // Always create a label span (CSS controls visibility via .narrow/.medium classes)
+    // Invocation index badge (only when >1 invocations of this node)
+    if (invTotal > 1) {
+      var invLabel = document.createElement('span');
+      invLabel.className = 'bar-invocation';
+      invLabel.textContent = '#' + (invIdx + 1);
+      bar.appendChild(invLabel);
+    }
+
+    // Duration label
     var durText = span.duration_ms != null ? fmtDur(span.duration_ms) : '';
     var labelEl = document.createElement('span');
     labelEl.className = 'bar-label';
@@ -422,42 +516,57 @@ def _js() -> str:
 
     bar.setAttribute('data-span-id', span.span_id);
 
-    // --- Enhanced tooltip ---
-    bar.addEventListener('mouseenter', function(e) {
-      var childCount = span.children ? span.children.length : 0;
-      var llmCount = detail ? detail.llm_calls.length : 0;
-      var toolCount = detail ? detail.tool_calls.length : 0;
-      var errCount = detail ? detail.errors.length : 0;
+    // --- Tooltip ---
+    (function(span, invIdx, invTotal, detail) {
+      bar.addEventListener('mouseenter', function(e) {
+        var llmCount = detail ? detail.llm_calls.length : 0;
+        var toolCount = detail ? detail.tool_calls.length : 0;
+        var errCount = detail ? detail.errors.length : 0;
+        var childCount = span.children ? span.children.length : 0;
 
-      var html = '<div class="tt-title">' + escHtml(span.node_name) + '</div>';
-      html += '<div class="tt-row"><strong>' + fmtDurFull(span.duration_ms) + '</strong>';
-      html += ' &middot; ' + fmtPct(span.duration_ms, totalMs) + ' of trace</div>';
+        var html = '<div class="tt-title">' + escHtml(span.node_name);
+        if (invTotal > 1) html += ' <span style="opacity:0.6;font-weight:400">#' + (invIdx + 1) + ' of ' + invTotal + '</span>';
+        html += '</div>';
+        html += '<div class="tt-row"><strong>' + fmtDurFull(span.duration_ms) + '</strong>';
+        html += ' &middot; ' + fmtPct(span.duration_ms, totalMs) + ' of trace</div>';
 
-      var parts = [];
-      if (llmCount > 0) parts.push(llmCount + ' LLM call' + (llmCount > 1 ? 's' : ''));
-      if (toolCount > 0) parts.push(toolCount + ' tool call' + (toolCount > 1 ? 's' : ''));
-      if (errCount > 0) parts.push(errCount + ' error' + (errCount > 1 ? 's' : ''));
-      if (parts.length === 0 && childCount > 0) parts.push(childCount + ' event' + (childCount > 1 ? 's' : ''));
+        var parts = [];
+        if (llmCount > 0) parts.push(llmCount + ' LLM call' + (llmCount > 1 ? 's' : ''));
+        if (toolCount > 0) parts.push(toolCount + ' tool call' + (toolCount > 1 ? 's' : ''));
+        if (errCount > 0) parts.push(errCount + ' error' + (errCount > 1 ? 's' : ''));
+        if (parts.length === 0 && childCount > 0) parts.push(childCount + ' event' + (childCount > 1 ? 's' : ''));
+        if (parts.length > 0) {
+          html += '<div class="tt-row">' + parts.join(' &middot; ') + '</div>';
+        }
 
-      if (parts.length > 0) {
-        html += '<div class="tt-row">' + parts.join(' &middot; ') + '</div>';
-      }
+        if (llmCount > 0) {
+          var models = [];
+          detail.llm_calls.forEach(function(c) {
+            var m = c.model || 'unknown';
+            if (models.indexOf(m) === -1) models.push(m);
+          });
+          html += '<div class="tt-row" style="font-size:11px;margin-top:2px;">Model: ' + escHtml(models.join(', ')) + '</div>';
+        }
 
-      tooltip.innerHTML = html;
-      tooltip.style.display = 'block';
-    });
-    bar.addEventListener('mousemove', function(e) {
-      tooltip.style.left = (e.clientX + 12) + 'px';
-      tooltip.style.top = (e.clientY - 8) + 'px';
-    });
-    bar.addEventListener('mouseleave', function() {
-      tooltip.style.display = 'none';
-    });
+        tooltip.innerHTML = html;
+        tooltip.style.display = 'block';
+      });
 
-    // Click -> detail panel
-    bar.addEventListener('click', function() { showDetail(span); });
+      bar.addEventListener('mousemove', function(e) {
+        tooltip.style.left = (e.clientX + 12) + 'px';
+        tooltip.style.top = (e.clientY - 8) + 'px';
+      });
 
-    // Child event markers — only on bars wide enough to show them meaningfully
+      bar.addEventListener('mouseleave', function() {
+        tooltip.style.display = 'none';
+      });
+
+      bar.addEventListener('click', function() {
+        showDetail(span, invIdx, invTotal);
+      });
+    })(span, invIdx, invTotal, detail);
+
+    // Child event markers — only on wide-enough bars
     if (span.children && span.duration_ms && rawWidthPct >= NARROW_THRESHOLD) {
       var spanDur = span.duration_ms || (endMs - span.start_ms) || 1;
       span.children.forEach(function(child) {
@@ -477,11 +586,15 @@ def _js() -> str:
     track.appendChild(bar);
   });
 
-  // Detail panel
-  function showDetail(span) {
+  // ===== Detail panel =====
+
+  function showDetail(span, invIdx, invTotal) {
     var detail = D.events_detail[span.span_id];
     var durStr = span.duration_ms != null ? fmtDurFull(span.duration_ms) : 'no duration';
-    detailTitle.textContent = span.node_name + ' (' + durStr + ')';
+    var titleStr = span.node_name;
+    if (invTotal > 1) titleStr += ' #' + (invIdx + 1);
+    titleStr += ' (' + durStr + ')';
+    detailTitle.textContent = titleStr;
     var html = '';
 
     // State diff
@@ -590,9 +703,5 @@ def _js() -> str:
     panel.style.display = 'none';
   });
 
-  function escHtml(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
 })();
 """
