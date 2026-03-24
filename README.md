@@ -1,10 +1,39 @@
 # OrchEval
 
-Evaluate, profile, and debug multi-agent LLM systems.
-
 [![PyPI](https://img.shields.io/pypi/v/orcheval)](https://pypi.org/project/orcheval/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+
+Evaluate, profile, and debug multi-agent LLM systems.
+
+## What OrchEval Analyzes
+
+- Cost and token breakdown by node and model
+- Routing decision audit with pattern detection (invariant routing, oscillation, dominant paths)
+- Multi-pass convergence tracking with per-metric trend classification
+- Retry and error pattern analysis with success rates
+- LLM behavioral patterns (prompt growth, stuck agents, redundant tool calls)
+- Execution timeline with span hierarchy and state diffs
+- Cross-run aggregation with outlier detection and trend analysis
+
+## Architecture
+
+OrchEval has three layers:
+
+```
+Collect         →    Report          →    Inspect
+─────────────        ──────────────       ──────────────
+Adapters emit        report() runs        to_digest()
+framework events     6 analysis modules   to_html()
+into Traces          compare_runs()       to_mermaid()
+                     TraceCollection      to_dataframe()
+```
+
+For contributor details, see the directory READMEs:
+[`src/orcheval/`](src/orcheval/README.md) |
+[`src/orcheval/adapters/`](src/orcheval/adapters/README.md) |
+[`src/orcheval/report/`](src/orcheval/report/README.md) |
+[`tests/`](tests/README.md)
 
 ## Installation
 
@@ -337,43 +366,6 @@ trace = Trace.from_json_file("orcheval_outputs/trace.json")
 report = FullReport.from_json_file("report.json")
 trace.to_html("trace.html", reports=report)
 ```
-
-## What OrchEval Analyzes
-
-- Cost and token breakdown by node and model
-- Routing decision audit with pattern detection (invariant routing, oscillation, dominant paths)
-- Multi-pass convergence tracking with per-metric trend classification
-- Retry and error pattern analysis with success rates
-- LLM behavioral patterns (prompt growth, stuck agents, redundant tool calls)
-- Execution timeline with span hierarchy and state diffs
-- Cross-run aggregation with outlier detection and trend analysis
-
-## Comparison with Other Tools
-
-| Tool | Strengths | What OrchEval adds |
-|---|---|---|
-| **LangSmith** | Production tracing, prompt playground, dataset management | System-level multi-agent analysis (routing audits, convergence, LLM pattern detection). Offline/local — no SaaS account needed. |
-| **Langfuse** | Open-source tracing, cost tracking, prompt management | Cross-run aggregation, execution shape clustering, behavioral anomaly detection. Self-contained HTML output. |
-| **Arize Phoenix** | Embedding analysis, retrieval evaluation, LLM evals | Multi-agent-specific reports (routing flags, retry sequences, inter-agent patterns). No server required. |
-
-## Architecture
-
-OrchEval has three layers:
-
-```
-Collect         →    Report          →    Inspect
-─────────────        ──────────────       ──────────────
-Adapters emit        report() runs        to_digest()
-framework events     6 analysis modules   to_html()
-into Traces          compare_runs()       to_mermaid()
-                     TraceCollection      to_dataframe()
-```
-
-For contributor details, see the directory READMEs:
-[`src/orcheval/`](src/orcheval/README.md) |
-[`src/orcheval/adapters/`](src/orcheval/adapters/README.md) |
-[`src/orcheval/report/`](src/orcheval/report/README.md) |
-[`tests/`](tests/README.md)
 
 ## Known Limitations
 
