@@ -129,6 +129,8 @@ All export methods that accept a bare filename (e.g. `"trace.html"`) write to th
 
 Open `orcheval_outputs/trace.html` in any browser.
 
+![alt text](image.png)
+
 ## Text Digest
 
 ```python
