@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
 
 class Event(BaseModel):
@@ -60,6 +60,13 @@ class LLMCall(Event):
     response_summary: str | None = None
     system_message: str | None = None
 
+    @field_validator("input_tokens", "output_tokens", mode="before")
+    @classmethod
+    def _coerce_tokens_to_int(cls, v: Any) -> int | None:
+        if v is None:
+            return None
+        return int(v)
+
 
 class ToolCall(Event):
     """Emitted when a tool call completes."""
@@ -105,6 +112,23 @@ class PassBoundary(Event):
     pass_number: int
     direction: Literal["enter", "exit"]
     metrics_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("pass_number", mode="before")
+    @classmethod
+    def _coerce_pass_number_to_int(cls, v: Any) -> int:
+        return int(v)
+
+    @field_validator("metrics_snapshot", mode="before")
+    @classmethod
+    def _coerce_metric_ints(cls, v: Any) -> dict[str, Any]:
+        if not isinstance(v, dict):
+            return v
+        _INT_KEYS = {"violations_found", "rows_remaining", "steps_executed"}
+        out = dict(v)
+        for key in _INT_KEYS:
+            if key in out and out[key] is not None:
+                out[key] = int(out[key])
+        return out
 
 
 AnyEvent = Annotated[

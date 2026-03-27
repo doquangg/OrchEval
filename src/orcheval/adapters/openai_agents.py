@@ -29,7 +29,7 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval.sanitize import compute_state_diff, sanitize_state
+from orcheval.sanitize import compute_state_diff, sanitize_outputs, sanitize_state
 
 
 def _ensure_openai_agents() -> None:
@@ -41,13 +41,6 @@ def _ensure_openai_agents() -> None:
             "openai-agents is required for the OpenAI Agents adapter. "
             "Install it with: pip install orcheval[openai_agents]"
         ) from None
-
-
-def _sanitize_outputs(outputs: Any) -> dict[str, Any]:
-    """Extract a JSON-safe subset of outputs for ``decision_context``."""
-    if outputs is None:
-        return {}
-    return sanitize_state(outputs, max_size=2000, max_string=200, max_json_value=500)
 
 
 def _parse_iso(s: str | None) -> datetime | None:
@@ -381,7 +374,7 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
             self._adapter._emit(event)
 
             self._last_exited_agent = agent_name
-            self._last_exit_outputs = _sanitize_outputs(
+            self._last_exit_outputs = sanitize_outputs(
                 {"output_type": getattr(span_data, "output_type", None)}
             )
 
@@ -451,8 +444,8 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
             if isinstance(usage, dict):
                 in_toks = usage.get("input_tokens")
                 out_toks = usage.get("output_tokens")
-                input_tokens = int(in_toks) if in_toks is not None else None
-                output_tokens = int(out_toks) if out_toks is not None else None
+                input_tokens = in_toks
+                output_tokens = out_toks
 
             event = LLMCall(
                 trace_id=self._adapter.trace_id,

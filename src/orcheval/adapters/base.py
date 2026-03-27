@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from orcheval.events import Event
+
+_log = logging.getLogger(__name__)
 
 
 class BaseAdapter(ABC):
@@ -38,6 +41,7 @@ class BaseAdapter(ABC):
 
     def _emit(self, event: Event) -> None:
         """Record an event. Called by subclasses."""
+        _log.debug("%s event for node=%s", event.event_type, event.node_name)
         self._events.append(event)
 
     def reset(self) -> None:

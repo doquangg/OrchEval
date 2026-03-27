@@ -16,7 +16,7 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval.sanitize import compute_state_diff, sanitize_state
+from orcheval.sanitize import compute_state_diff, sanitize_outputs, sanitize_state
 
 
 def _ensure_langchain() -> None:
@@ -28,15 +28,6 @@ def _ensure_langchain() -> None:
             "langchain_core is required for the LangGraph adapter. "
             "Install it with: pip install orcheval[langgraph]"
         ) from None
-
-
-def _sanitize_outputs(outputs: Any) -> dict[str, Any]:
-    """Extract a JSON-safe subset of node outputs for decision_context.
-
-    Delegates to :func:`sanitize_state` with limits matching the original
-    implementation (2000-char budget, 200-char strings, 500-char JSON values).
-    """
-    return sanitize_state(outputs, max_size=2000, max_string=200, max_json_value=500)
 
 
 class LangGraphAdapter(BaseAdapter):
@@ -241,7 +232,7 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     )
                     self._adapter._emit(event)
                     self._last_exited_node = node_name
-                    self._last_exit_outputs = _sanitize_outputs(outputs)
+                    self._last_exit_outputs = sanitize_outputs(outputs)
 
         def on_chain_error(
             self,
@@ -392,8 +383,8 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     usage = response.llm_output.get("token_usage", {})
                     prompt_toks = usage.get("prompt_tokens")
                     completion_toks = usage.get("completion_tokens")
-                    input_tokens = int(prompt_toks) if prompt_toks is not None else None
-                    output_tokens = int(completion_toks) if completion_toks is not None else None
+                    input_tokens = prompt_toks
+                    output_tokens = completion_toks
 
                 # Extract response text
                 output_message: dict[str, Any] | None = None

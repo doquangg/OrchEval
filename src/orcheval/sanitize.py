@@ -281,3 +281,12 @@ def compute_state_diff(
             modified.append(key)
 
     return {"added": added, "removed": removed, "modified": modified}
+
+
+def sanitize_outputs(outputs: Any) -> dict[str, Any]:
+    """Extract a JSON-safe subset of outputs for event context fields.
+
+    Thin wrapper around :func:`sanitize_state` with limits tuned for
+    embedding in ``decision_context`` and similar event fields.
+    """
+    return sanitize_state(outputs, max_size=2000, max_string=200, max_json_value=500)

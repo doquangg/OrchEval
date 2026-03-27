@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar, overload
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from orcheval.report import FullReport
+    from orcheval.report.comparison import RunComparison
+
 from orcheval.events import (
     EVENT_ADAPTER,
     Event,
@@ -80,6 +83,9 @@ class Trace:
 
     def __bool__(self) -> bool:
         return len(self._events) > 0
+
+    def __repr__(self) -> str:
+        return f"Trace(id={self._trace_id[:8]}, events={len(self._events)})"
 
     # --- Query methods ---
 
@@ -212,90 +218,11 @@ class Trace:
         events: list[Event] = [EVENT_ADAPTER.validate_python(e) for e in data["events"]]
         return cls(events=events, trace_id=trace_id)
 
-    def to_json(self, path: str | None = None) -> str:
-        """Serialize the trace to a JSON string.
-
-        If *path* is given, also writes the JSON to that file.
-        Always returns the JSON string.
-        """
-        from orcheval.events import PassBoundary, LLMCall
-
-        events_data = []
-        for i, e in enumerate(self._events):
-            try:
-                events_data.append(e.model_dump(mode="json"))
-            except TypeError as err:
-                # Handle float/int conversion issues by fixing the event fields
-                if "'float' object cannot be interpreted as an integer" in str(err):
-                    # Try to fix PassBoundary metrics
-                    if isinstance(e, PassBoundary) and e.metrics_snapshot:
-                        fixed_metrics = {}
-                        for key, val in e.metrics_snapshot.items():
-                            if key in ('violations_found', 'rows_remaining', 'steps_executed'):
-                                fixed_metrics[key] = int(val) if val is not None else None
-                            else:
-                                fixed_metrics[key] = val
-                        # Recreate the event with fixed metrics
-                        e_fixed = PassBoundary(
-                            trace_id=e.trace_id,
-                            span_id=e.span_id,
-                            parent_span_id=e.parent_span_id,
-                            timestamp=e.timestamp,
-                            node_name=e.node_name,
-                            metadata=e.metadata,
-                            pass_number=int(e.pass_number) if isinstance(e.pass_number, float) else e.pass_number,
-                            direction=e.direction,
-                            metrics_snapshot=fixed_metrics,
-                        )
-                        try:
-                            events_data.append(e_fixed.model_dump(mode="json"))
-                        except Exception as err2:
-                            raise TypeError(
-                                f"Failed to serialize event {i} (type={e.event_type}) even after fixing: {err2}\n"
-                                f"Event details: {e_fixed}"
-                            ) from err2
-                    # Try to fix LLMCall tokens
-                    elif isinstance(e, LLMCall):
-                        in_tok = int(e.input_tokens) if isinstance(e.input_tokens, float) else e.input_tokens
-                        out_tok = int(e.output_tokens) if isinstance(e.output_tokens, float) else e.output_tokens
-                        e_fixed = LLMCall(
-                            trace_id=e.trace_id,
-                            span_id=e.span_id,
-                            parent_span_id=e.parent_span_id,
-                            timestamp=e.timestamp,
-                            node_name=e.node_name,
-                            metadata=e.metadata,
-                            model=e.model,
-                            input_messages=e.input_messages,
-                            output_message=e.output_message,
-                            input_tokens=in_tok,
-                            output_tokens=out_tok,
-                            cost=e.cost,
-                            duration_ms=e.duration_ms,
-                            prompt_summary=e.prompt_summary,
-                            response_summary=e.response_summary,
-                            system_message=e.system_message,
-                        )
-                        try:
-                            events_data.append(e_fixed.model_dump(mode="json"))
-                        except Exception as err2:
-                            raise TypeError(
-                                f"Failed to serialize event {i} (type={e.event_type}) even after fixing: {err2}\n"
-                                f"Event details: {e_fixed}"
-                            ) from err2
-                    else:
-                        raise TypeError(
-                            f"Failed to serialize event {i} (type={e.event_type}): {err}\n"
-                            f"Event details: {e}"
-                        ) from err
-                else:
-                    raise TypeError(
-                        f"Failed to serialize event {i} (type={e.event_type}): {err}\n"
-                        f"Event details: {e}"
-                    ) from err
-        result = json.dumps({
+    def to_json(self) -> str:
+        """Serialize the trace to a JSON string."""
+        return json.dumps({
             "trace_id": self._trace_id,
-            "events": events_data,
+            "events": [e.model_dump(mode="json") for e in self._events],
         })
         if path is not None:
             resolved = _resolve_output_path(path)
@@ -315,7 +242,7 @@ class Trace:
 
     # --- Comparison ---
 
-    def compare(self, other: Trace, **kwargs: Any) -> Any:
+    def compare(self, other: Trace, **kwargs: Any) -> RunComparison:
         """Compare this trace (baseline) with *other* (experiment).
 
         Returns a ``RunComparison`` with *self* as the baseline.
@@ -346,10 +273,11 @@ class Trace:
         return result
 
     def to_dataframe(self) -> Any:
-        """Produce a pandas DataFrame with one row per event.
+        """Produce a ``pandas.DataFrame`` with one row per event.
 
-        Returns a ``pandas.DataFrame``.  Raises ``ImportError`` with an
-        install hint if pandas is not available.
+        Returns a ``pandas.DataFrame``.  The return type is ``Any`` to
+        avoid a hard dependency on pandas.  Raises ``ImportError`` with
+        an install hint if pandas is not available.
         """
         from orcheval.export.dataframe import build_dataframe
 
@@ -363,7 +291,7 @@ class Trace:
         path: str | None = None,
         include_llm_content: bool = False,
         focus_nodes: list[str] | None = None,
-        reports: Any = None,
+        reports: FullReport | None = None,
         max_chars: int = 16_000,
     ) -> str:
         """Produce a compact narrative text summary optimized for LLM analysis.
@@ -396,7 +324,7 @@ class Trace:
         self,
         path: str | None = None,
         *,
-        reports: Any = None,
+        reports: FullReport | None = None,
     ) -> str:
         """Produce a self-contained HTML waterfall visualization.
 
