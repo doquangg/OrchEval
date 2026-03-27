@@ -311,12 +311,12 @@ class TestCompareRunsEmpty:
         empty = Trace(events=[], trace_id="empty")
         result = compare_runs(empty, empty)
         assert isinstance(result, RunComparison)
-        assert result.cost.total_delta is None
-        assert result.cost.node_deltas == []
-        assert result.duration.total_delta is None
-        assert result.routing.edges_added == []
-        assert result.invocations.changes == []
-        assert result.errors.new_errors == []
+        assert result.cost_total_delta is None
+        assert result.cost_node_deltas == []
+        assert result.duration_total_delta is None
+        assert result.routing_edges_added == []
+        assert result.invocation_changes == []
+        assert result.error_new == []
         assert result.convergence is None
         assert result.summary == ""
 
@@ -325,22 +325,22 @@ class TestCompareRunsEmpty:
         exp = _experiment_trace()
         result = compare_runs(empty, exp)
         # Experiment has cost data, baseline does not
-        assert result.cost.total_delta is not None
-        assert result.cost.total_delta.baseline is None
-        assert result.cost.total_delta.experiment is not None
+        assert result.cost_total_delta is not None
+        assert result.cost_total_delta.baseline is None
+        assert result.cost_total_delta.experiment is not None
         # All routing edges are "added"
-        assert len(result.routing.edges_added) > 0
-        assert result.routing.edges_removed == []
+        assert len(result.routing_edges_added) > 0
+        assert result.routing_edges_removed == []
 
     def test_experiment_empty(self) -> None:
         base = _baseline_trace()
         empty = Trace(events=[], trace_id="empty")
         result = compare_runs(base, empty)
-        assert result.cost.total_delta is not None
-        assert result.cost.total_delta.experiment is None
+        assert result.cost_total_delta is not None
+        assert result.cost_total_delta.experiment is None
         # All routing edges are "removed"
-        assert len(result.routing.edges_removed) > 0
-        assert result.routing.edges_added == []
+        assert len(result.routing_edges_removed) > 0
+        assert result.routing_edges_added == []
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ class TestCompareRunsEmpty:
 class TestCostComparison:
     def test_total_cost_delta(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        total = result.cost.total_delta
+        total = result.cost_total_delta
         assert total is not None
         assert total.baseline == pytest.approx(0.007)  # 0.005 + 0.002
         assert total.experiment == pytest.approx(0.009)  # 0.004 + 0.004 + 0.001
@@ -361,7 +361,7 @@ class TestCostComparison:
 
     def test_node_cost_deltas(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        node_map = {d.name: d for d in result.cost.node_deltas}
+        node_map = {d.name: d for d in result.cost_node_deltas}
         assert "agent" in node_map
         assert "summarizer" in node_map
         # Agent: 0.005 -> 0.008
@@ -377,7 +377,7 @@ class TestCostComparison:
 
     def test_model_cost_deltas(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        model_map = {d.name: d for d in result.cost.model_deltas}
+        model_map = {d.name: d for d in result.cost_model_deltas}
         assert "gpt-4o" in model_map
         assert "gpt-4o-mini" in model_map
 
@@ -405,7 +405,7 @@ class TestCostComparison:
         ]
         t = Trace(events=events, trace_id=TRACE_ID)
         result = compare_runs(t, t)
-        assert result.cost.total_delta is None
+        assert result.cost_total_delta is None
 
     def test_node_only_in_one_trace(self) -> None:
         """A node in experiment but not baseline has baseline=None."""
@@ -433,10 +433,10 @@ class TestCostComparison:
         ]
         exp = Trace(events=exp_events, trace_id="e")
         result = compare_runs(base, exp)
-        assert len(result.cost.node_deltas) == 1
-        assert result.cost.node_deltas[0].name == "new_node"
-        assert result.cost.node_deltas[0].baseline is None
-        assert result.cost.node_deltas[0].experiment == pytest.approx(0.001)
+        assert len(result.cost_node_deltas) == 1
+        assert result.cost_node_deltas[0].name == "new_node"
+        assert result.cost_node_deltas[0].baseline is None
+        assert result.cost_node_deltas[0].experiment == pytest.approx(0.001)
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +447,7 @@ class TestCostComparison:
 class TestDurationComparison:
     def test_total_duration_delta(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        total = result.duration.total_delta
+        total = result.duration_total_delta
         assert total is not None
         assert total.baseline_ms is not None
         assert total.experiment_ms is not None
@@ -455,7 +455,7 @@ class TestDurationComparison:
 
     def test_node_duration_flagged(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        node_map = {d.node_name: d for d in result.duration.node_deltas}
+        node_map = {d.node_name: d for d in result.duration_node_deltas}
         # Summarizer: 2000ms -> 1000ms = -50%, should be flagged
         summarizer = node_map["summarizer"]
         assert summarizer.flagged is True
@@ -488,10 +488,10 @@ class TestDurationComparison:
         e = Trace(events=events_e, trace_id="e")
 
         result_default = compare_runs(b, e)
-        assert result_default.duration.node_deltas[0].flagged is False
+        assert result_default.duration_node_deltas[0].flagged is False
 
         result_strict = compare_runs(b, e, duration_flag_threshold=0.05)
-        assert result_strict.duration.node_deltas[0].flagged is True
+        assert result_strict.duration_node_deltas[0].flagged is True
 
     def test_node_only_in_one_trace(self) -> None:
         events_b = [
@@ -507,7 +507,7 @@ class TestDurationComparison:
         b = Trace(events=events_b, trace_id="b")
         e = Trace(events=[], trace_id="e")
         result = compare_runs(b, e)
-        node_map = {d.node_name: d for d in result.duration.node_deltas}
+        node_map = {d.node_name: d for d in result.duration_node_deltas}
         assert "old_node" in node_map
         assert node_map["old_node"].experiment_ms is None
 
@@ -520,12 +520,12 @@ class TestDurationComparison:
 class TestRoutingComparison:
     def test_edge_added(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        added_edges = {(r.source_node, r.target_node) for r in result.routing.edges_added}
+        added_edges = {(r.source_node, r.target_node) for r in result.routing_edges_added}
         assert ("router", "codegen") in added_edges
 
     def test_edge_changed(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        changed_map = {(r.source_node, r.target_node): r for r in result.routing.edges_changed}
+        changed_map = {(r.source_node, r.target_node): r for r in result.routing_edges_changed}
         # router->agent was 2x in baseline, 1x in experiment
         assert ("router", "agent") in changed_map
         r = changed_map[("router", "agent")]
@@ -547,9 +547,9 @@ class TestRoutingComparison:
         b = Trace(events=b_events, trace_id="b")
         e = Trace(events=e_events, trace_id="e")
         result = compare_runs(b, e)
-        assert len(result.routing.edges_removed) == 1
-        assert result.routing.edges_removed[0].source_node == "r"
-        assert result.routing.edges_removed[0].target_node == "x"
+        assert len(result.routing_edges_removed) == 1
+        assert result.routing_edges_removed[0].source_node == "r"
+        assert result.routing_edges_removed[0].target_node == "x"
 
     def test_identical_routing(self) -> None:
         events = [
@@ -563,9 +563,9 @@ class TestRoutingComparison:
         ]
         t = Trace(events=events, trace_id="t")
         result = compare_runs(t, t)
-        assert result.routing.edges_added == []
-        assert result.routing.edges_removed == []
-        assert result.routing.edges_changed == []
+        assert result.routing_edges_added == []
+        assert result.routing_edges_removed == []
+        assert result.routing_edges_changed == []
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +576,7 @@ class TestRoutingComparison:
 class TestInvocationComparison:
     def test_invocation_count_changes(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        inv_map = {c.node_name: c for c in result.invocations.changes}
+        inv_map = {c.node_name: c for c in result.invocation_changes}
         # Agent: 1 -> 2 invocations
         assert "agent" in inv_map
         assert inv_map["agent"].baseline_count == 1
@@ -585,7 +585,7 @@ class TestInvocationComparison:
 
     def test_new_node_in_experiment(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        inv_map = {c.node_name: c for c in result.invocations.changes}
+        inv_map = {c.node_name: c for c in result.invocation_changes}
         # codegen only in experiment
         assert "codegen" in inv_map
         assert inv_map["codegen"].baseline_count == 0
@@ -593,7 +593,7 @@ class TestInvocationComparison:
 
     def test_node_removed_in_experiment(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        inv_map = {c.node_name: c for c in result.invocations.changes}
+        inv_map = {c.node_name: c for c in result.invocation_changes}
         # validator only in baseline
         assert "validator" in inv_map
         assert inv_map["validator"].baseline_count == 1
@@ -613,7 +613,7 @@ class TestInvocationComparison:
         ]
         t = Trace(events=events, trace_id="t")
         result = compare_runs(t, t)
-        assert result.invocations.changes == []
+        assert result.invocation_changes == []
 
 
 # ---------------------------------------------------------------------------
@@ -624,12 +624,12 @@ class TestInvocationComparison:
 class TestErrorComparison:
     def test_new_error_detected(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        new_keys = [(e.error_type, e.node_name) for e in result.errors.new_errors]
+        new_keys = [(e.error_type, e.node_name) for e in result.error_new]
         assert ("SyntaxError", "codegen") in new_keys
 
     def test_resolved_error_detected(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        resolved_keys = [(e.error_type, e.node_name) for e in result.errors.resolved_errors]
+        resolved_keys = [(e.error_type, e.node_name) for e in result.error_resolved]
         assert ("ValueError", "validator") in resolved_keys
 
     def test_matching_by_type_and_node(self) -> None:
@@ -656,8 +656,8 @@ class TestErrorComparison:
         e = Trace(events=e_events, trace_id="e")
         result = compare_runs(b, e)
         # ValueError in node_a is resolved, ValueError in node_b is new
-        resolved_keys = [(err.error_type, err.node_name) for err in result.errors.resolved_errors]
-        new_keys = [(err.error_type, err.node_name) for err in result.errors.new_errors]
+        resolved_keys = [(err.error_type, err.node_name) for err in result.error_resolved]
+        new_keys = [(err.error_type, err.node_name) for err in result.error_new]
         assert ("ValueError", "node_a") in resolved_keys
         assert ("ValueError", "node_b") in new_keys
 
@@ -691,8 +691,8 @@ class TestErrorComparison:
         b = Trace(events=b_events, trace_id="b")
         e = Trace(events=e_events, trace_id="e")
         result = compare_runs(b, e)
-        assert len(result.errors.count_changes) == 1
-        cc = result.errors.count_changes[0]
+        assert len(result.error_count_changes) == 1
+        cc = result.error_count_changes[0]
         assert cc.baseline_count == 1
         assert cc.experiment_count == 2
         assert cc.status == "count_changed"
@@ -700,16 +700,16 @@ class TestErrorComparison:
     def test_no_errors_in_either(self) -> None:
         empty = Trace(events=[], trace_id="t")
         result = compare_runs(empty, empty)
-        assert result.errors.new_errors == []
-        assert result.errors.resolved_errors == []
-        assert result.errors.count_changes == []
+        assert result.error_new == []
+        assert result.error_resolved == []
+        assert result.error_count_changes == []
 
     def test_message_sample_populated(self, baseline: Trace, experiment: Trace) -> None:
         result = compare_runs(baseline, experiment)
-        for e in result.errors.new_errors:
+        for e in result.error_new:
             if e.error_type == "SyntaxError":
                 assert e.message_sample == "unexpected indent"
-        for e in result.errors.resolved_errors:
+        for e in result.error_resolved:
             if e.error_type == "ValueError":
                 assert e.message_sample == "invalid schema"
 
@@ -846,7 +846,7 @@ class TestPatternComparison:
         b = Trace(events=b_events, trace_id="b")
         e = Trace(events=e_events, trace_id="e")
         result = compare_runs(b, e)
-        new_keys = [(p.pattern_type, p.node_name) for p in result.llm_patterns.new_patterns]
+        new_keys = [(p.pattern_type, p.node_name) for p in result.pattern_new]
         assert ("redundant_tool_call", "agent") in new_keys
 
     def test_resolved_pattern(self) -> None:
@@ -924,7 +924,7 @@ class TestPatternComparison:
         e = Trace(events=e_events, trace_id="e")
         result = compare_runs(b, e)
         resolved_keys = [
-            (p.pattern_type, p.node_name) for p in result.llm_patterns.resolved_patterns
+            (p.pattern_type, p.node_name) for p in result.pattern_resolved
         ]
         assert ("redundant_tool_call", "agent") in resolved_keys
 
@@ -1018,9 +1018,9 @@ class TestPatternComparison:
         result = compare_runs(b, e)
         # redundant_tool_call in node_a resolved, in node_b new
         resolved_keys = [
-            (p.pattern_type, p.node_name) for p in result.llm_patterns.resolved_patterns
+            (p.pattern_type, p.node_name) for p in result.pattern_resolved
         ]
-        new_keys = [(p.pattern_type, p.node_name) for p in result.llm_patterns.new_patterns]
+        new_keys = [(p.pattern_type, p.node_name) for p in result.pattern_new]
         assert ("redundant_tool_call", "node_a") in resolved_keys
         assert ("redundant_tool_call", "node_b") in new_keys
 
@@ -1136,8 +1136,8 @@ class TestTraceCompare:
         direct = compare_runs(baseline, experiment)
         convenience = baseline.compare(experiment)
         assert direct.summary == convenience.summary
-        assert direct.cost == convenience.cost
-        assert direct.errors == convenience.errors
+        assert direct.cost_total_delta == convenience.cost_total_delta
+        assert direct.error_new == convenience.error_new
 
 
 # ---------------------------------------------------------------------------
@@ -1156,8 +1156,8 @@ class TestPrecomputedReports:
             experiment_report=e_report,
         )
         direct = compare_runs(baseline, experiment)
-        assert result.cost == direct.cost
-        assert result.routing == direct.routing
+        assert result.cost_total_delta == direct.cost_total_delta
+        assert result.routing_edges_added == direct.routing_edges_added
 
     def test_partial_precomputed(self, baseline: Trace, experiment: Trace) -> None:
         """Only one side pre-computed, other generated internally."""

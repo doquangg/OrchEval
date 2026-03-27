@@ -45,7 +45,14 @@ class PassSummary(BaseModel):
 
 
 class ConvergenceReport(BaseModel):
-    """Multi-pass convergence analysis."""
+    """Multi-pass convergence analysis.
+
+    .. note::
+
+       Neither the LangGraph nor OpenAI Agents adapter emits ``PassBoundary``
+       events automatically.  This report will be empty unless pass boundaries
+       are recorded manually via ``ManualAdapter.pass_boundary()``.
+    """
 
     model_config = {"frozen": True}
 

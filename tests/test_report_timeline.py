@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from orcheval.events import LLMCall, NodeEntry, NodeExit, ToolCall
+from orcheval.events import NodeEntry, NodeExit
 from orcheval.report.timeline import TimelineReport, timeline_report
 from orcheval.trace import Trace
 
@@ -15,7 +15,6 @@ class TestTimelineReportBasic:
         result = timeline_report(trace)
         assert isinstance(result, TimelineReport)
         assert result.spans == []
-        assert result.events == []
         assert result.total_duration_ms is None
         assert result.start_time is None
 
@@ -68,60 +67,11 @@ class TestTimelineSpans:
         assert result.spans[0].duration_ms is None
 
 
-class TestTimelineEvents:
-    def test_flat_event_count(self, sample_trace: Trace) -> None:
-        result = timeline_report(sample_trace)
-        # 7 events total in sample_trace
-        assert len(result.events) == 7
-
-    def test_event_offsets_non_negative(self, sample_trace: Trace) -> None:
-        result = timeline_report(sample_trace)
-        for event in result.events:
-            assert event.offset_ms >= 0.0
-
-    def test_event_offsets_monotonic(self, sample_trace: Trace) -> None:
-        result = timeline_report(sample_trace)
-        offsets = [e.offset_ms for e in result.events]
-        assert offsets == sorted(offsets)
-
-
 class TestTimelineEventSummaries:
-    def test_node_entry_summary(self) -> None:
-        events = [
-            NodeEntry(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(0), node_name="agent"),
-        ]
-        trace = Trace(events=events, trace_id=TRACE_ID)
-        result = timeline_report(trace)
-        assert result.events[0].summary == "Enter agent"
-
-    def test_node_exit_summary_with_duration(self) -> None:
-        events = [
-            NodeEntry(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(0), node_name="agent"),
-            NodeExit(
-                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(1), node_name="agent",
-                duration_ms=1000.0,
-            ),
-        ]
-        trace = Trace(events=events, trace_id=TRACE_ID)
-        result = timeline_report(trace)
-        assert result.events[1].summary == "Exit agent (1000ms)"
-
-    def test_llm_call_summary(self) -> None:
-        events = [
-            LLMCall(
-                trace_id=TRACE_ID, timestamp=_ts(0),
-                model="gpt-4o", input_tokens=100, output_tokens=50,
-            ),
-        ]
-        trace = Trace(events=events, trace_id=TRACE_ID)
-        result = timeline_report(trace)
-        assert result.events[0].summary == "LLM call to gpt-4o (100+50 tokens)"
-
-    def test_tool_call_summary(self) -> None:
-        events = [
-            ToolCall(trace_id=TRACE_ID, timestamp=_ts(0), tool_name="search"),
-        ]
-        trace = Trace(events=events, trace_id=TRACE_ID)
-        result = timeline_report(trace)
-        assert result.events[0].summary == "Tool call: search"
+    def test_child_event_summaries(self, sample_trace: Trace) -> None:
+        result = timeline_report(sample_trace)
+        agent_span = result.spans[0]
+        summaries = [c.summary for c in agent_span.children]
+        assert any("LLM call" in s for s in summaries)
+        assert any("Tool call" in s for s in summaries)
 

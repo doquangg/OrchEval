@@ -48,3 +48,20 @@ Framework-specific adapters (`LangGraphAdapter`, `OpenAIAgentsAdapter`) are **no
 - **Export methods** on `Trace` (e.g., `to_dataframe()`, `to_digest()`) delegate to functions in `export/`.
 - **Optional dependencies** (langgraph, openai-agents, pandas) are lazy-imported at point of use.
 - **All report functions are pure** — `f(Trace) -> FrozenModel`, no side effects.
+
+## Span Linking Model
+
+Events are linked into a hierarchy using two matching strategies:
+
+```
+NodeEntry  (span_id="node-001")
+  ├─ LLMCall    (span_id="llm-001",  parent_span_id="node-001")
+  ├─ ToolCall   (span_id="tool-001", parent_span_id="node-001")
+  ├─ ErrorEvent (span_id="err-001",  parent_span_id="node-001")
+  └─ NodeExit   (span_id="node-001")   ← same span_id, NOT parent_span_id
+```
+
+1. **Entry/exit pairs** — `NodeEntry` and `NodeExit` share the same `span_id`. They define the boundaries of a node invocation.
+2. **Child events** — `LLMCall`, `ToolCall`, and `ErrorEvent` set `parent_span_id` to the `span_id` of their enclosing node. They get their own unique `span_id`.
+
+The canonical implementation of this logic is `_invocation_events()` in `export/digest.py`, which collects all events belonging to a single node invocation using both strategies.

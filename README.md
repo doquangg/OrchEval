@@ -377,9 +377,10 @@ trace.to_html("trace.html", reports=report)
   reflect actual conditional logic. For precise routing data, use the manual adapter's
   `routing_decision()` method.
 
-- **LangGraph pass boundaries**: Multi-pass convergence tracking (`PassBoundary` events) is not
-  automatically detected by the LangGraph adapter. Use the manual adapter's `pass_boundary()`
-  method to record pass boundaries.
+- **Pass boundaries / convergence tracking**: Neither the LangGraph adapter nor the OpenAI Agents
+  adapter emits `PassBoundary` events automatically. `convergence_report()` will always return an
+  empty report unless you record pass boundaries manually via `ManualAdapter.pass_boundary()`.
+  This means convergence analysis requires explicit user instrumentation regardless of framework.
 
 - **Cost data**: `LLMCall.cost` is a passthrough field — it is auto-populated when the LLM
   provider reports cost in the callback response. OrchEval does not include a built-in pricing

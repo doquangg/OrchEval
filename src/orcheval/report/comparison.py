@@ -110,67 +110,6 @@ class PatternDiff(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Grouping models
-# ---------------------------------------------------------------------------
-
-
-class CostComparison(BaseModel):
-    """Cost dimension comparison."""
-
-    model_config = {"frozen": True}
-
-    total_delta: CostDelta | None = None
-    node_deltas: list[CostDelta] = Field(default_factory=list)
-    model_deltas: list[CostDelta] = Field(default_factory=list)
-
-
-class DurationComparison(BaseModel):
-    """Duration dimension comparison."""
-
-    model_config = {"frozen": True}
-
-    total_delta: DurationDelta | None = None
-    node_deltas: list[DurationDelta] = Field(default_factory=list)
-
-
-class RoutingComparison(BaseModel):
-    """Routing dimension comparison."""
-
-    model_config = {"frozen": True}
-
-    edges_added: list[RoutingDiff] = Field(default_factory=list)
-    edges_removed: list[RoutingDiff] = Field(default_factory=list)
-    edges_changed: list[RoutingDiff] = Field(default_factory=list)
-
-
-class InvocationComparison(BaseModel):
-    """Node invocation count comparison."""
-
-    model_config = {"frozen": True}
-
-    changes: list[InvocationDelta] = Field(default_factory=list)
-
-
-class ErrorComparison(BaseModel):
-    """Error dimension comparison."""
-
-    model_config = {"frozen": True}
-
-    new_errors: list[ErrorDiff] = Field(default_factory=list)
-    resolved_errors: list[ErrorDiff] = Field(default_factory=list)
-    count_changes: list[ErrorDiff] = Field(default_factory=list)
-
-
-class PatternComparison(BaseModel):
-    """LLM pattern dimension comparison."""
-
-    model_config = {"frozen": True}
-
-    new_patterns: list[PatternDiff] = Field(default_factory=list)
-    resolved_patterns: list[PatternDiff] = Field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
 # Root model
 # ---------------------------------------------------------------------------
 
@@ -180,13 +119,35 @@ class RunComparison(BaseModel):
 
     model_config = {"frozen": True}
 
-    cost: CostComparison
-    duration: DurationComparison
-    routing: RoutingComparison
-    invocations: InvocationComparison
-    errors: ErrorComparison
+    # Cost
+    cost_total_delta: CostDelta | None = None
+    cost_node_deltas: list[CostDelta] = Field(default_factory=list)
+    cost_model_deltas: list[CostDelta] = Field(default_factory=list)
+
+    # Duration
+    duration_total_delta: DurationDelta | None = None
+    duration_node_deltas: list[DurationDelta] = Field(default_factory=list)
+
+    # Routing
+    routing_edges_added: list[RoutingDiff] = Field(default_factory=list)
+    routing_edges_removed: list[RoutingDiff] = Field(default_factory=list)
+    routing_edges_changed: list[RoutingDiff] = Field(default_factory=list)
+
+    # Invocations
+    invocation_changes: list[InvocationDelta] = Field(default_factory=list)
+
+    # Errors
+    error_new: list[ErrorDiff] = Field(default_factory=list)
+    error_resolved: list[ErrorDiff] = Field(default_factory=list)
+    error_count_changes: list[ErrorDiff] = Field(default_factory=list)
+
+    # Convergence
     convergence: ConvergenceDiff | None = None
-    llm_patterns: PatternComparison
+
+    # LLM Patterns
+    pattern_new: list[PatternDiff] = Field(default_factory=list)
+    pattern_resolved: list[PatternDiff] = Field(default_factory=list)
+
     summary: str
 
 
@@ -251,7 +212,7 @@ def _duration_delta(
 def _compare_costs(
     b_cost: CostReport,
     e_cost: CostReport,
-) -> CostComparison:
+) -> tuple[CostDelta | None, list[CostDelta], list[CostDelta]]:
     # Total
     b_total = b_cost.total_cost
     e_total = e_cost.total_cost
@@ -299,18 +260,14 @@ def _compare_costs(
             em.total_tokens if em else 0,
         ))
 
-    return CostComparison(
-        total_delta=total,
-        node_deltas=node_deltas,
-        model_deltas=model_deltas,
-    )
+    return total, node_deltas, model_deltas
 
 
 def _compare_durations(
     b_trace: Trace,
     e_trace: Trace,
     threshold: float,
-) -> DurationComparison:
+) -> tuple[DurationDelta | None, list[DurationDelta]]:
     b_total = b_trace.total_duration()
     e_total = e_trace.total_duration()
     total = None
@@ -330,13 +287,13 @@ def _compare_durations(
         for name in all_names
     ]
 
-    return DurationComparison(total_delta=total, node_deltas=node_deltas)
+    return total, node_deltas
 
 
 def _compare_routing(
     b_routing: RoutingReport,
     e_routing: RoutingReport,
-) -> RoutingComparison:
+) -> tuple[list[RoutingDiff], list[RoutingDiff], list[RoutingDiff]]:
     b_edges: dict[tuple[str, str], int] = {}
     for edge in b_routing.decisions:
         b_edges[(edge.source_node, edge.target_node)] = edge.count
@@ -370,17 +327,15 @@ def _compare_routing(
                 baseline_count=b_count, experiment_count=e_count,
             ))
 
-    return RoutingComparison(
-        edges_added=added, edges_removed=removed, edges_changed=changed,
-    )
+    return added, removed, changed
 
 
-def _compare_invocations(b_trace: Trace, e_trace: Trace) -> InvocationComparison:
+def _compare_invocations(b_trace: Trace, e_trace: Trace) -> list[InvocationDelta]:
     b_counts: Counter[str] = Counter(inv.node_name for inv in b_trace.node_invocations())
     e_counts: Counter[str] = Counter(inv.node_name for inv in e_trace.node_invocations())
     all_names = sorted(set(b_counts) | set(e_counts))
 
-    changes = [
+    return [
         InvocationDelta(
             node_name=name,
             baseline_count=b_counts.get(name, 0),
@@ -391,10 +346,10 @@ def _compare_invocations(b_trace: Trace, e_trace: Trace) -> InvocationComparison
         if b_counts.get(name, 0) != e_counts.get(name, 0)
     ]
 
-    return InvocationComparison(changes=changes)
 
-
-def _compare_errors(b_trace: Trace, e_trace: Trace) -> ErrorComparison:
+def _compare_errors(
+    b_trace: Trace, e_trace: Trace,
+) -> tuple[list[ErrorDiff], list[ErrorDiff], list[ErrorDiff]]:
     def _build_error_map(
         trace: Trace,
     ) -> tuple[dict[tuple[str, str | None], int], dict[tuple[str, str | None], str]]:
@@ -437,11 +392,7 @@ def _compare_errors(b_trace: Trace, e_trace: Trace) -> ErrorComparison:
                 baseline_count=bc, experiment_count=ec, message_sample=msg,
             ))
 
-    return ErrorComparison(
-        new_errors=new_errors,
-        resolved_errors=resolved_errors,
-        count_changes=count_changes,
-    )
+    return new_errors, resolved_errors, count_changes
 
 
 def _compare_convergence(
@@ -477,7 +428,7 @@ def _compare_convergence(
 def _compare_patterns(
     b_pat: LLMPatternsReport,
     e_pat: LLMPatternsReport,
-) -> PatternComparison:
+) -> tuple[list[PatternDiff], list[PatternDiff]]:
     b_map = {(p.pattern_type, p.node_name): p for p in b_pat.patterns}
     e_map = {(p.pattern_type, p.node_name): p for p in e_pat.patterns}
 
@@ -499,9 +450,7 @@ def _compare_patterns(
         if key not in e_map
     ]
 
-    return PatternComparison(
-        new_patterns=new_patterns, resolved_patterns=resolved_patterns,
-    )
+    return new_patterns, resolved_patterns
 
 
 # ---------------------------------------------------------------------------
@@ -512,23 +461,29 @@ _DIRECTION_WORD = {True: "increased", False: "decreased"}
 
 
 def _build_summary(
-    cost: CostComparison,
-    duration: DurationComparison,
-    routing: RoutingComparison,
-    invocations: InvocationComparison,
-    errors: ErrorComparison,
+    *,
+    cost_total_delta: CostDelta | None,
+    duration_total_delta: DurationDelta | None,
+    duration_node_deltas: list[DurationDelta],
+    routing_edges_added: list[RoutingDiff],
+    routing_edges_removed: list[RoutingDiff],
+    invocation_changes: list[InvocationDelta],
+    error_new: list[ErrorDiff],
+    error_resolved: list[ErrorDiff],
+    error_count_changes: list[ErrorDiff],
     convergence: ConvergenceDiff | None,
-    llm_patterns: PatternComparison,
+    pattern_new: list[PatternDiff],
+    pattern_resolved: list[PatternDiff],
 ) -> str:
     items: list[tuple[int, str]] = []
 
     # Priority 0: new errors
-    for e in errors.new_errors:
+    for e in error_new:
         node = f" in '{e.node_name}'" if e.node_name else ""
         items.append((0, f"New error: {e.error_type}{node} ({e.experiment_count} occurrences)."))
 
     # Priority 0: count-changed errors (experiment significantly higher)
-    for e in errors.count_changes:
+    for e in error_count_changes:
         if e.experiment_count > e.baseline_count:
             node = f" in '{e.node_name}'" if e.node_name else ""
             items.append((
@@ -538,7 +493,7 @@ def _build_summary(
             ))
 
     # Priority 1: total cost change
-    td = cost.total_delta
+    td = cost_total_delta
     if td and td.pct_change is not None and td.delta:
         word = _DIRECTION_WORD[td.pct_change > 0]
         items.append((
@@ -548,7 +503,7 @@ def _build_summary(
         ))
 
     # Priority 2: total duration change
-    dd = duration.total_delta
+    dd = duration_total_delta
     if dd and dd.pct_change is not None and dd.delta_ms:
         word = _DIRECTION_WORD[dd.pct_change > 0]
         items.append((
@@ -558,20 +513,20 @@ def _build_summary(
         ))
 
     # Priority 2: flagged node duration changes
-    for d in duration.node_deltas:
+    for d in duration_node_deltas:
         if d.flagged and d.pct_change is not None and d.delta_ms:
             word = _DIRECTION_WORD[d.pct_change > 0]
             items.append((2, f"Duration of '{d.node_name}' {word} by {abs(d.pct_change):.1f}%."))
 
     # Priority 3: new warning-severity LLM patterns
-    for p in llm_patterns.new_patterns:
+    for p in pattern_new:
         if p.severity == "warning":
             items.append((3, f"New LLM pattern (warning): {p.description}"))
 
     # Priority 4: routing edges added/removed
-    for r in routing.edges_added:
+    for r in routing_edges_added:
         items.append((4, f"Routing edge {r.source_node}->{r.target_node} added."))
-    for r in routing.edges_removed:
+    for r in routing_edges_removed:
         items.append((4, f"Routing edge {r.source_node}->{r.target_node} removed."))
 
     # Priority 5: convergence status change
@@ -584,12 +539,12 @@ def _build_summary(
         items.append((5, f"Convergence status changed from {b_str} to {e_str}."))
 
     # Priority 6: resolved errors
-    for e in errors.resolved_errors:
+    for e in error_resolved:
         node = f" in '{e.node_name}'" if e.node_name else ""
         items.append((6, f"Resolved: {e.error_type}{node} no longer occurs."))
 
     # Priority 7: invocation count changes
-    for inv in invocations.changes:
+    for inv in invocation_changes:
         items.append((
             7,
             f"'{inv.node_name}' invocations changed "
@@ -597,14 +552,14 @@ def _build_summary(
         ))
 
     # Priority 8: resolved patterns, info-severity new patterns
-    for p in llm_patterns.resolved_patterns:
+    for p in pattern_resolved:
         items.append((8, f"Resolved LLM pattern: {p.description}"))
-    for p in llm_patterns.new_patterns:
+    for p in pattern_new:
         if p.severity != "warning":
             items.append((8, f"New LLM pattern (info): {p.description}"))
 
     # Priority 8: count-changed errors (experiment lower)
-    for e in errors.count_changes:
+    for e in error_count_changes:
         if e.experiment_count < e.baseline_count:
             node = f" in '{e.node_name}'" if e.node_name else ""
             items.append((
@@ -652,26 +607,39 @@ def compare_runs(
     b_report = baseline_report or _report(baseline)
     e_report = experiment_report or _report(experiment)
 
-    cost = _compare_costs(b_report.cost, e_report.cost)
-    dur = _compare_durations(baseline, experiment, duration_flag_threshold)
-    rout = _compare_routing(b_report.routing, e_report.routing)
-    inv = _compare_invocations(baseline, experiment)
-    errs = _compare_errors(baseline, experiment)
+    cost_total, cost_nodes, cost_models = _compare_costs(b_report.cost, e_report.cost)
+    dur_total, dur_nodes = _compare_durations(baseline, experiment, duration_flag_threshold)
+    rout_added, rout_removed, rout_changed = _compare_routing(b_report.routing, e_report.routing)
+    inv_changes = _compare_invocations(baseline, experiment)
+    err_new, err_resolved, err_count = _compare_errors(baseline, experiment)
     conv = _compare_convergence(b_report.convergence, e_report.convergence)
-    pats = _compare_patterns(b_report.llm_patterns, e_report.llm_patterns)
+    pat_new, pat_resolved = _compare_patterns(b_report.llm_patterns, e_report.llm_patterns)
 
-    summary = _build_summary(cost, dur, rout, inv, errs, conv, pats)
+    fields: dict[str, Any] = {
+        "cost_total_delta": cost_total,
+        "cost_node_deltas": cost_nodes,
+        "cost_model_deltas": cost_models,
+        "duration_total_delta": dur_total,
+        "duration_node_deltas": dur_nodes,
+        "routing_edges_added": rout_added,
+        "routing_edges_removed": rout_removed,
+        "routing_edges_changed": rout_changed,
+        "invocation_changes": inv_changes,
+        "error_new": err_new,
+        "error_resolved": err_resolved,
+        "error_count_changes": err_count,
+        "convergence": conv,
+        "pattern_new": pat_new,
+        "pattern_resolved": pat_resolved,
+    }
 
-    return RunComparison(
-        cost=cost,
-        duration=dur,
-        routing=rout,
-        invocations=inv,
-        errors=errs,
-        convergence=conv,
-        llm_patterns=pats,
-        summary=summary,
-    )
+    # _build_summary reads a subset of the fields (excludes detail-only ones)
+    summary = _build_summary(**{
+        k: v for k, v in fields.items()
+        if k not in ("cost_node_deltas", "cost_model_deltas", "routing_edges_changed")
+    })
+
+    return RunComparison(**fields, summary=summary)
 
 
 __all__ = [
@@ -683,13 +651,6 @@ __all__ = [
     "ErrorDiff",
     "ConvergenceDiff",
     "PatternDiff",
-    # Grouping models
-    "CostComparison",
-    "DurationComparison",
-    "RoutingComparison",
-    "InvocationComparison",
-    "ErrorComparison",
-    "PatternComparison",
     # Root
     "RunComparison",
     # Function

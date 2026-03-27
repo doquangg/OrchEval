@@ -54,7 +54,6 @@ class TimelineReport(BaseModel):
     model_config = {"frozen": True}
 
     spans: list[TimelineSpan] = Field(default_factory=list)
-    events: list[TimelineEvent] = Field(default_factory=list)
     total_duration_ms: float | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
@@ -106,17 +105,6 @@ def timeline_report(trace: Trace) -> TimelineReport:
     start_ts = timeline[0].timestamp
     end_ts = timeline[-1].timestamp
 
-    # Build flat event list
-    flat_events: list[TimelineEvent] = []
-    for event in timeline:
-        flat_events.append(TimelineEvent(
-            event_type=event.event_type,
-            offset_ms=_offset_ms(event.timestamp, start_ts),
-            node_name=event.node_name,
-            summary=_event_summary(event),
-            duration_ms=_event_duration(event),
-        ))
-
     # Build spans from NodeEntry/NodeExit pairs (matched by span_id)
     entries: dict[str, tuple[NodeEntry, float]] = {}  # span_id -> (entry, start_ms)
     exits: dict[str, tuple[NodeExit, float]] = {}  # span_id -> (exit, end_ms)
@@ -164,7 +152,6 @@ def timeline_report(trace: Trace) -> TimelineReport:
 
     return TimelineReport(
         spans=spans,
-        events=flat_events,
         total_duration_ms=trace.total_duration(),
         start_time=start_ts,
         end_time=end_ts,
