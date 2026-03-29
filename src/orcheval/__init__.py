@@ -54,6 +54,12 @@ class Tracer:
         tracer.adapter.llm_call(model="gpt-4o", input_tokens=100)
         tracer.adapter.node_exit("my_node", duration_ms=1500.0)
         trace = tracer.collect()
+
+        # Auto-save all artifacts to orcheval_outputs/:
+        tracer = Tracer(adapter="langgraph", save_artifacts=True)
+        result = graph.invoke(input, config={"callbacks": [tracer.handler]})
+        trace = tracer.collect()
+        # Writes orcheval_outputs/trace.json, report.json, trace.html
     """
 
     def __init__(
@@ -63,10 +69,12 @@ class Tracer:
         *,
         infer_routing: bool = False,
         capture_state: bool = False,
+        save_artifacts: bool = False,
     ) -> None:
         self._trace_id = trace_id or uuid.uuid4().hex
         self._infer_routing = infer_routing
         self._capture_state = capture_state
+        self._save_artifacts = save_artifacts
 
         if isinstance(adapter, str):
             self._adapter = self._resolve_adapter(adapter)
@@ -118,8 +126,19 @@ class Tracer:
         return self._trace_id
 
     def collect(self) -> Trace:
-        """Collect all recorded events into a Trace."""
-        return Trace(events=self._adapter.get_events(), trace_id=self._trace_id)
+        """Collect all recorded events into a Trace.
+
+        If *save_artifacts* was set on the tracer, also writes
+        ``orcheval_outputs/trace.json``, ``orcheval_outputs/report.json``,
+        and ``orcheval_outputs/trace.html``.
+        """
+        trace = Trace(events=self._adapter.get_events(), trace_id=self._trace_id)
+        if self._save_artifacts:
+            full = report(trace)
+            trace.to_json("trace.json")
+            full.to_json("report.json")
+            trace.to_html("trace.html", reports=full)
+        return trace
 
     def reset(self) -> None:
         """Clear collected events for reuse."""
