@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from orcheval._io import json_safe
 from orcheval.events import RoutingDecision
 
 if TYPE_CHECKING:
@@ -112,7 +113,7 @@ def _detect_context_divergence(
                     f"{sorted(targets)} with identical decision context"
                 ),
                 evidence={
-                    "context": ctx_to_raw[key],
+                    "context": json_safe(ctx_to_raw[key]),
                     "targets": sorted(targets),
                 },
             ))
@@ -225,7 +226,7 @@ def routing_report(
                 target_node=target,
                 count=count,
                 fraction=count / total,
-                sample_contexts=target_contexts[target],
+                sample_contexts=[json_safe(c) for c in target_contexts[target]],
             ))
 
         # Detect patterns

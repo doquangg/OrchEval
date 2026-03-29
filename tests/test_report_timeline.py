@@ -75,3 +75,19 @@ class TestTimelineEventSummaries:
         assert any("LLM call" in s for s in summaries)
         assert any("Tool call" in s for s in summaries)
 
+
+class TestTimelineEventsProperty:
+    def test_events_empty_report(self) -> None:
+        report = TimelineReport()
+        assert report.events == []
+
+    def test_events_flattens_span_children(self, sample_trace: Trace) -> None:
+        result = timeline_report(sample_trace)
+        total_children = sum(len(s.children) for s in result.spans)
+        assert len(result.events) == total_children
+
+    def test_events_sorted_by_offset(self, sample_trace: Trace) -> None:
+        result = timeline_report(sample_trace)
+        offsets = [e.offset_ms for e in result.events]
+        assert offsets == sorted(offsets)
+

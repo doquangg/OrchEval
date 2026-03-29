@@ -188,7 +188,7 @@ def _sanitize_container(
     try:
         serialized = json.dumps(value, default=str)
         if len(serialized) <= max_json_value:
-            return value, len(serialized)
+            return json.loads(serialized), len(serialized)
     except (TypeError, ValueError):
         pass
 

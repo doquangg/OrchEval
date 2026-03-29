@@ -58,6 +58,14 @@ class TimelineReport(BaseModel):
     start_time: datetime | None = None
     end_time: datetime | None = None
 
+    @property
+    def events(self) -> list[TimelineEvent]:
+        """Flat list of all events across spans, sorted by offset."""
+        return sorted(
+            (e for span in self.spans for e in span.children),
+            key=lambda e: e.offset_ms,
+        )
+
 
 def _offset_ms(event_ts: datetime, start_ts: datetime) -> float:
     return (event_ts - start_ts).total_seconds() * 1000

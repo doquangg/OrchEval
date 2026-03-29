@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from orcheval.report import FullReport
     from orcheval.report.comparison import RunComparison
 
+from orcheval._io import json_safe, write_output
 from orcheval.events import (
     EVENT_ADAPTER,
     Event,
@@ -22,19 +23,6 @@ from orcheval.events import (
 )
 
 E = TypeVar("E", bound=Event)
-
-DEFAULT_OUTPUT_DIR = "orcheval_outputs"
-
-
-def _resolve_output_path(path: str) -> Path:
-    """Resolve an output path, prepending the default output dir for bare filenames."""
-    p = Path(path)
-    if p.is_absolute():
-        return p
-    if p.parent == Path("."):
-        # Bare filename like "trace.html" -> orcheval_outputs/trace.html
-        return Path(DEFAULT_OUTPUT_DIR) / p
-    return p
 
 
 class NodeInvocation(NamedTuple):
@@ -218,16 +206,23 @@ class Trace:
         events: list[Event] = [EVENT_ADAPTER.validate_python(e) for e in data["events"]]
         return cls(events=events, trace_id=trace_id)
 
-    def to_json(self) -> str:
-        """Serialize the trace to a JSON string."""
-        return json.dumps({
+    def to_json(self, path: str | None = None) -> str:
+        """Serialize the trace to a JSON string.
+
+        If *path* is given, also writes the JSON to that file.
+        """
+        events_data = []
+        for e in self._events:
+            try:
+                events_data.append(e.model_dump(mode="json"))
+            except (TypeError, ValueError):
+                events_data.append(json_safe(e.model_dump()))
+        result = json.dumps({
             "trace_id": self._trace_id,
-            "events": [e.model_dump(mode="json") for e in self._events],
+            "events": events_data,
         })
         if path is not None:
-            resolved = _resolve_output_path(path)
-            resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(result, encoding="utf-8")
+            write_output(result, path)
         return result
 
     @classmethod
@@ -267,9 +262,7 @@ class Trace:
 
         result = build_mermaid(self)
         if path is not None:
-            resolved = _resolve_output_path(path)
-            resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(result, encoding="utf-8")
+            write_output(result, path)
         return result
 
     def to_dataframe(self) -> Any:
@@ -315,9 +308,7 @@ class Trace:
             max_chars=max_chars,
         )
         if path is not None:
-            resolved = _resolve_output_path(path)
-            resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(result, encoding="utf-8")
+            write_output(result, path)
         return result
 
     def to_html(
@@ -339,7 +330,5 @@ class Trace:
 
         html = build_html(self, reports=reports)
         if path is not None:
-            resolved = _resolve_output_path(path)
-            resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(html, encoding="utf-8")
+            write_output(html, path)
         return html

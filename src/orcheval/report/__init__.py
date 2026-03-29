@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from orcheval._io import write_output
 from orcheval.report.comparison import (
     ConvergenceDiff,
     CostDelta,
@@ -54,6 +55,17 @@ class FullReport(BaseModel):
     timeline: TimelineReport
     retries: RetryReport
     llm_patterns: LLMPatternsReport
+
+    def to_json(self, path: str | None = None) -> str:
+        """Serialize the report to a JSON string.
+
+        If *path* is given, also writes the JSON to that file, routing bare
+        filenames through the default output directory (``orcheval_outputs/``).
+        """
+        result = self.model_dump_json()
+        if path is not None:
+            write_output(result, path)
+        return result
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> FullReport:

@@ -18,7 +18,8 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval.trace import DEFAULT_OUTPUT_DIR, NodeInvocation, Trace
+from orcheval._io import DEFAULT_OUTPUT_DIR
+from orcheval.trace import NodeInvocation, Trace
 
 TRACE_ID = "test-trace-container"
 BASE_TIME = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
