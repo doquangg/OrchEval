@@ -103,7 +103,9 @@
     if (span.end_ms == null) bar.classList.add('open-ended');
 
     const durText = span.duration_ms != null ? span.duration_ms.toFixed(0) + 'ms' : '';
-    bar.textContent = durText;
+    if (widthPct > 3) {
+      bar.textContent = durText;
+    }
     bar.setAttribute('data-span-id', span.span_id);
 
     // Hover
@@ -133,12 +135,26 @@
         // Clamp to [0, 100] — child timestamps may fall slightly outside the parent span
         // due to clock skew or rounding, so we defensively bound the position.
         const posPct = Math.max(0, Math.min(100, (relOffset / spanDur) * 100));
+
+        const isDurationEvent = child.event_type === 'llm_call' || child.event_type === 'tool_call';
+        const hasDuration = isDurationEvent && child.duration_ms > 0;
+
         const marker = document.createElement('div');
-        marker.className = 'child-marker';
-        if (child.event_type === 'error_event') marker.classList.add('error');
         marker.style.left = posPct + '%';
-        marker.style.background = D.node_colors[span.node_name] || '#999';
         marker.title = child.summary;
+
+        if (hasDuration) {
+          // Sub-bar: width represents actual call duration, adjacent calls don't overlap
+          const widthPct = Math.max(0.4, (child.duration_ms / spanDur) * 100);
+          marker.className = 'child-marker sub-bar' +
+            (child.event_type === 'tool_call' ? ' tool-call' : '');
+          marker.style.width = widthPct + '%';
+        } else {
+          // Tick mark: no duration data or non-duration event type
+          marker.className = 'child-marker tick' +
+            (child.event_type === 'error_event' ? ' error' : '');
+        }
+
         bar.appendChild(marker);
       });
     }
@@ -190,14 +206,30 @@
         }
         if (llm.input_messages && llm.input_messages.length) {
           llm.input_messages.forEach(function(msg) {
+            if (msg.role === 'system' && llm.system_message) return;
+            var content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+            if (!content && msg.tool_calls && msg.tool_calls.length) {
+              content = msg.tool_calls.map(function(tc) {
+                return tc.name + '(' + (typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args)) + ')';
+              }).join('\n');
+            }
+            if (!content) return;
             html += '<div><span class="msg-role">' + escHtml(msg.role || 'user') + ':</span>';
-            html += '<div class="msg-content">' + escHtml(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)) + '</div></div>';
+            html += '<div class="msg-content">' + escHtml(content) + '</div></div>';
           });
         }
         if (llm.output_message) {
-          html += '<div><span class="msg-role">Assistant:</span>';
-          var outContent = llm.output_message.content || JSON.stringify(llm.output_message);
-          html += '<div class="msg-content">' + escHtml(typeof outContent === 'string' ? outContent : JSON.stringify(outContent)) + '</div></div>';
+          var outContent = llm.output_message.content;
+          if (typeof outContent !== 'string') outContent = outContent ? JSON.stringify(outContent) : '';
+          if (!outContent && llm.output_message.tool_calls && llm.output_message.tool_calls.length) {
+            outContent = llm.output_message.tool_calls.map(function(tc) {
+              return tc.name + '(' + (typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args)) + ')';
+            }).join('\n');
+          }
+          if (outContent) {
+            html += '<div><span class="msg-role">Assistant:</span>';
+            html += '<div class="msg-content">' + escHtml(outContent) + '</div></div>';
+          }
         }
         html += '</div>';
       });

@@ -273,6 +273,9 @@ def _render_llm_detail(trace: Trace, focus_nodes: list[str] | None) -> str:
 
         if call.output_message:
             content = call.output_message.get("content", "")
+            if not content and call.output_message.get("tool_calls"):
+                names = [tc.get("name", "") for tc in call.output_message["tool_calls"]]
+                content = f"[Tool calls: {', '.join(names)}]"
             if isinstance(content, str) and len(content) > 1000:
                 content = content[:1000] + "…[truncated]"
             lines.append(f"\n**Output**: {content}")

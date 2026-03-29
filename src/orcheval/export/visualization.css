@@ -37,10 +37,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .span-bar.has-error { background-image: repeating-linear-gradient(
     45deg, transparent, transparent 4px, rgba(255,255,255,0.25) 4px, rgba(255,255,255,0.25) 8px); }
 .span-bar.open-ended { border-right: 2px dashed rgba(255,255,255,0.6); }
-.child-marker { position: absolute; width: 8px; height: 8px; border-radius: 50%;
-                top: 50%; transform: translate(-50%, -50%); border: 1.5px solid #fff;
-                cursor: pointer; z-index: 1; }
-.child-marker.error { background: #e15759 !important; }
+.child-marker { position: absolute; top: 0; height: 100%; z-index: 1;
+                cursor: pointer; pointer-events: auto; }
+.child-marker.sub-bar { border-radius: 0; border: none;
+                         background: rgba(255,255,255,0.28);
+                         border-left: 2px solid rgba(255,255,255,0.75); }
+.child-marker.sub-bar.tool-call { background: rgba(0,0,0,0.18);
+                                   border-left-color: rgba(0,0,0,0.5); }
+.child-marker.tick { width: 2px; background: rgba(255,255,255,0.65);
+                     border: none; border-radius: 0; }
+.child-marker.tick.error { background: #e15759 !important; width: 3px; }
 
 /* Tooltip */
 .tooltip { position: fixed; background: #333; color: #fff; padding: 6px 10px;

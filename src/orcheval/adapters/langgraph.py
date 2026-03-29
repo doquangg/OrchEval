@@ -19,6 +19,21 @@ from orcheval.events import (
 from orcheval.sanitize import compute_state_diff, sanitize_outputs, sanitize_state
 
 
+def _normalize_tool_calls(raw: list[Any]) -> list[dict[str, Any]]:
+    """Normalize LangChain tool call formats into ``[{"name": ..., "args": ...}]``."""
+    result: list[dict[str, Any]] = []
+    for tc in raw:
+        if isinstance(tc, dict):
+            name = tc.get("name") or tc.get("function", {}).get("name", "")
+            args = tc.get("args") or tc.get("function", {}).get("arguments", "")
+        else:
+            # Dataclass-style (e.g. LangChain ToolCall objects)
+            name = getattr(tc, "name", "")
+            args = getattr(tc, "args", "")
+        result.append({"name": name, "args": args})
+    return result
+
+
 def _ensure_langchain() -> None:
     """Raise a helpful ImportError if langchain_core is not installed."""
     try:
@@ -88,6 +103,11 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
             self._run_to_node: dict[str, str] = {}  # run_id -> node_name
             self._span_stack: list[str] = []  # stack of span_ids for nesting
 
+            # Nested chain deduplication: track outermost active span per node
+            # and suppress inner spans from emitting NodeEntry/NodeExit.
+            self._active_node_spans: dict[str, str] = {}  # node_name -> outermost span_id
+            self._suppressed_spans: set[str] = set()  # suppressed inner span_ids
+
             # Pending start data for pairing start/end callbacks
             self._pending_llm: dict[str, dict[str, Any]] = {}
             self._pending_tool: dict[str, dict[str, Any]] = {}
@@ -106,11 +126,17 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
 
         @property
         def _current_parent_span(self) -> str | None:
-            return self._span_stack[-1] if self._span_stack else None
+            for span_id in reversed(self._span_stack):
+                if span_id not in self._suppressed_spans:
+                    return span_id
+            return None
 
         @property
         def _current_node_name(self) -> str | None:
-            return self._run_to_node.get(self._span_stack[-1]) if self._span_stack else None
+            for span_id in reversed(self._span_stack):
+                if span_id not in self._suppressed_spans:
+                    return self._run_to_node.get(span_id)
+            return None
 
         def _make_span_id(self) -> str:
             return uuid.uuid4().hex
@@ -137,6 +163,15 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
 
                 if node_name is not None:
                     self._run_to_node[span_id] = node_name
+
+                    if node_name in self._active_node_spans:
+                        # Nested chain for already-active node — suppress
+                        self._span_stack.append(span_id)
+                        self._suppressed_spans.add(span_id)
+                        return
+
+                    # First entry for this node — register as outermost
+                    self._active_node_spans[node_name] = span_id
                     parent = self._current_parent_span
                     self._span_stack.append(span_id)
 
@@ -205,6 +240,15 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     pass
 
                 if node_name is not None:
+                    # Suppressed inner span — clean up and skip NodeExit
+                    if span_id in self._suppressed_spans:
+                        self._suppressed_spans.discard(span_id)
+                        return
+
+                    # Outermost span — clean up active tracking and emit NodeExit
+                    if self._active_node_spans.get(node_name) == span_id:
+                        del self._active_node_spans[node_name]
+
                     now = datetime.now(timezone.utc)
                     duration_ms = None
                     entry_time = self._node_entry_times.pop(span_id, None)
@@ -329,16 +373,8 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                 try:
                     # messages is list[list[BaseMessage]] — use first batch
                     chat_msgs = messages[0] if messages else []
-                    chat_messages = [
-                        {
-                            "role": getattr(m, "type", "unknown"),
-                            "content": getattr(m, "content", ""),
-                        }
-                        for m in chat_msgs
-                    ]
-                    pending["chat_messages"] = chat_messages
 
-                    # Extract system message
+                    # Extract system message first (stored in dedicated field)
                     sys_msg = next(
                         (
                             m
@@ -349,6 +385,27 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                     )
                     if sys_msg is not None:
                         pending["system_message"] = getattr(sys_msg, "content", "")
+
+                    # Build chat_messages, excluding system (already extracted)
+                    # and capturing tool_calls from AI messages
+                    chat_messages: list[dict[str, Any]] = []
+                    for m in chat_msgs:
+                        if getattr(m, "type", None) == "system":
+                            continue
+                        msg_dict: dict[str, Any] = {
+                            "role": getattr(m, "type", "unknown"),
+                            "content": getattr(m, "content", ""),
+                        }
+                        if getattr(m, "type", None) == "ai":
+                            tc = getattr(m, "tool_calls", None) or []
+                            if not tc:
+                                tc = getattr(m, "additional_kwargs", {}).get(
+                                    "tool_calls", []
+                                )
+                            if tc:
+                                msg_dict["tool_calls"] = _normalize_tool_calls(tc)
+                        chat_messages.append(msg_dict)
+                    pending["chat_messages"] = chat_messages
                 except Exception:
                     # If structured parsing fails, store minimal pending entry
                     # so on_llm_end can still emit an event
@@ -399,6 +456,13 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                             "role": getattr(msg, "type", "ai"),
                             "content": getattr(msg, "content", gen.text),
                         }
+                        tc = getattr(msg, "tool_calls", None) or []
+                        if not tc:
+                            tc = getattr(msg, "additional_kwargs", {}).get(
+                                "tool_calls", []
+                            )
+                        if tc:
+                            output_message["tool_calls"] = _normalize_tool_calls(tc)
 
                 # Build input messages: use structured chat messages if available
                 # (from on_chat_model_start), else fall back to flat prompts

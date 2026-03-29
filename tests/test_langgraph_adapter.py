@@ -473,10 +473,11 @@ class TestChatModelStart:
 
         llm = adapter.get_events()[0]
         assert isinstance(llm, LLMCall)
-        # Should have role-tagged messages, not all "user"
         roles = [m["role"] for m in llm.input_messages]
-        assert "system" in roles
+        # System messages go to dedicated field, not input_messages
+        assert "system" not in roles
         assert "human" in roles
+        assert llm.system_message == "Be helpful"
 
     def test_no_system_message_when_absent(self) -> None:
         adapter = LangGraphAdapter(trace_id=TRACE_ID)
@@ -535,6 +536,89 @@ class TestChatModelStart:
         assert isinstance(llm, LLMCall)
         # prompt_summary should come from the first non-system message
         assert llm.prompt_summary == "User question here"
+
+
+class TestToolCallsCapture:
+    """Test that tool_calls are captured from AI messages and output."""
+
+    @staticmethod
+    def _make_llm_result_with_tool_calls(
+        tool_calls: list[dict[str, Any]],
+    ) -> LLMResult:
+        """Create an LLMResult whose message carries tool_calls."""
+        from langchain_core.messages import AIMessage
+        from langchain_core.outputs import ChatGeneration
+
+        msg = AIMessage(content="", tool_calls=tool_calls)
+        gen = ChatGeneration(message=msg, text="")
+        return LLMResult(generations=[[gen]])
+
+    def test_tool_calls_captured_from_ai_input_messages(self) -> None:
+        from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        # Simulate multi-turn: human -> ai (tool call) -> tool result -> human
+        messages = [[
+            HumanMessage(content="Analyze this"),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "lookup", "args": {"query": "test"}, "id": "tc1"}],
+            ),
+            ToolMessage(content="result data", tool_call_id="tc1"),
+            HumanMessage(content="Now summarize"),
+        ]]
+        handler.on_chat_model_start({}, messages, run_id=run_id)
+        handler.on_llm_end(_make_llm_result("Summary"), run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        ai_msgs = [m for m in llm.input_messages if m["role"] == "ai"]
+        assert len(ai_msgs) == 1
+        assert "tool_calls" in ai_msgs[0]
+        assert ai_msgs[0]["tool_calls"][0]["name"] == "lookup"
+        assert ai_msgs[0]["tool_calls"][0]["args"] == {"query": "test"}
+
+    def test_tool_calls_captured_from_output(self) -> None:
+        from langchain_core.messages import HumanMessage
+
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        messages = [[HumanMessage(content="Do something")]]
+        handler.on_chat_model_start({}, messages, run_id=run_id)
+
+        result = self._make_llm_result_with_tool_calls(
+            [{"name": "search", "args": {"q": "hello"}, "id": "tc2"}]
+        )
+        handler.on_llm_end(result, run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        assert llm.output_message is not None
+        assert "tool_calls" in llm.output_message
+        assert llm.output_message["tool_calls"][0]["name"] == "search"
+
+    def test_system_not_in_input_messages(self) -> None:
+        """System message should only be in the dedicated field, not input_messages."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        adapter = LangGraphAdapter(trace_id=TRACE_ID)
+        handler = adapter.get_callback_handler()
+        run_id = _make_run_id()
+
+        messages = [[SystemMessage(content="You are helpful"), HumanMessage(content="Hi")]]
+        handler.on_chat_model_start({}, messages, run_id=run_id)
+        handler.on_llm_end(_make_llm_result("Hello"), run_id=run_id)
+
+        llm = adapter.get_events()[0]
+        assert isinstance(llm, LLMCall)
+        assert llm.system_message == "You are helpful"
+        assert all(m["role"] != "system" for m in llm.input_messages)
+        assert any(m["role"] == "human" for m in llm.input_messages)
 
 
 class TestRoutingInference:
