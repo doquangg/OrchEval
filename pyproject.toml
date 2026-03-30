@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "orcheval"
 version = "0.1.0"
-description = "Evaluations for multi-agent and swarm-based orchestrations."
+description = "Evaluations for multi-agent orchestrations."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
