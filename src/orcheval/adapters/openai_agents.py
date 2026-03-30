@@ -31,6 +31,14 @@ from orcheval.events import (
 )
 from orcheval.sanitize import compute_state_diff, sanitize_outputs, sanitize_state
 
+import warnings
+warnings.warn(
+    "OpenAIAgentsAdapter is experimental and has not been validated "
+    "against real workloads. Use ManualAdapter as a fallback if you "
+    "encounter issues.",
+    UserWarning,
+    stacklevel=2,
+)
 
 def _ensure_openai_agents() -> None:
     """Raise a helpful ImportError if the openai-agents SDK is not installed."""

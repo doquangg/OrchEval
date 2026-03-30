@@ -292,6 +292,8 @@ tracer = Tracer(adapter="langgraph", capture_state=True)
 
 ### OpenAI Agents SDK
 
+#### Note: The OpenAI Agents SDK adapter is experimental and has not been validated against real workloads. If you encounter issues, please open an issue or use the ManualAdapter as a fallback.
+
 ```python
 from orcheval import Tracer
 from agents.tracing import add_trace_processor
