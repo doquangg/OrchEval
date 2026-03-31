@@ -6,6 +6,38 @@
 
 Evaluate, profile, and debug multi-agent LLM systems.
 
+## Why OrchEval
+OrchEval arose out of a need to observe a multi-agent class project; I wanted to know
+exactly how my system was behaving; when did it reroute, when did it fail, and why? Existing
+tools on the market (LangSmith, Langfuse, AgentOps, what have you) require accounts or self-hosted deployments, and I'm ultimately too lazy for that. Besides, some of these services aren't free. 
+
+So anyways, I thought I'd make my own. With a simple `pip install` and a few imports, you can get your orchestration traced and analyzed within a few lines. OrchEval doesn't do any production monitoring or prompt management, but it is quite useful for deep offline analysis of multi-agent behavior that you couldn't see otherwise, such as:
+
+- Why is my agent's prompt growing 120% across retries?
+- Is the router oscillating between two nodes instead of converging?
+- Did the architecture change actually reduce cost, or just shift it?
+- Which of these 50 traces is the outlier, and why?
+
+
+If you're building with LangGraph, OpenAI Agents SDK, or any other custom orchestration and you want to understand what your agents are actually doing, for free, without signing up for anything, OrchEval is your tool.
+
+### Comparison
+
+| | OrchEval | LangSmith | Langfuse | AgentOps | Arize Phoenix |
+|---|---|---|---|---|---|
+| **Type** | Python library | Cloud platform | Platform (cloud + self-host) | Cloud platform | Platform (cloud + self-host) |
+| **Setup** | `pip install` | Account + API key | Docker or cloud account | Account + API key | Docker or cloud account |
+| **Pricing** | Free (Apache 2.0) | Free tier, then $39/seat/mo + per-trace | Free tier, self-host free | Free tier, then $40/mo | Free tier, self-host free (ELv2) |
+| **Data stays local** | Always | No (cloud) | Self-host only | No (cloud) | Self-host only |
+| **Multi-agent routing analysis** | Built-in (pattern detection) | Manual trace inspection | Manual trace inspection | Session replay | Manual trace inspection |
+| **Cross-run aggregation** | Built-in (outliers, trends, shapes) | Dashboard filtering | Dashboard filtering | Dashboard filtering | Dataset comparison |
+| **Convergence tracking** | Built-in (per-metric classification) | — | — | — | — |
+| **LLM behavioral patterns** | Built-in (5 detectors) | — | — | — | — |
+| **Run-to-run diff** | Structured (`compare_runs()`) | Side-by-side in UI | — | — | Experiment comparison |
+| **Output format** | Pydantic models, HTML, JSON, Mermaid, DataFrame | Web dashboard | Web dashboard | Web dashboard | Web dashboard + notebooks |
+| **CI/CD friendly** | Yes (pure functions, no I/O) | Via API | Via API | Via API | Via API |
+| **Framework lock-in** | None | Best with LangChain | None | None | None |
+
 ## What OrchEval Analyzes
 
 - Cost and token breakdown by node and model
@@ -370,6 +402,34 @@ trace = Trace.from_json_file("orcheval_outputs/trace.json")
 report = FullReport.from_json_file("report.json")
 trace.to_html("trace.html", reports=report)
 ```
+
+## Contributing
+
+Contributions are welcome. OrchEval follows a standard open-source workflow:
+
+1. **Open an issue first.** Whether it's a bug report, feature request, or a question — start with a [GitHub issue](https://github.com/doquangg/OrchEval/issues). This lets us discuss the approach before you write code.
+
+2. **Fork and branch.** Fork the repo, create a branch from `main`, and make your changes. Keep commits focused — one logical change per PR.
+
+3. **Follow existing conventions.** The codebase uses `ruff` for linting and formatting, `mypy` for type checking, and `pytest` for tests. Run all three before submitting:
+   ```bash
+   pip install -e ".[dev]"
+   ruff check src/ tests/
+   mypy src/
+   pytest
+   ```
+
+4. **Write tests.** If you're adding a feature, add tests. If you're fixing a bug, add a test that reproduces it. Use the `ManualAdapter` and `_ts()` helpers from `tests/conftest.py` — no framework dependencies or API keys needed.
+
+5. **Submit a PR.** Reference the issue number, describe what changed and why, and keep the diff reviewable. Large changes should be discussed in the issue first.
+
+### Adding a new adapter
+
+See [`src/orcheval/adapters/README.md`](src/orcheval/adapters/README.md) for the full guide. The short version: subclass `BaseAdapter`, implement `get_callback_handler()`, register in `Tracer._resolve_adapter()`, and add an optional-dependency group in `pyproject.toml`.
+
+### Adding a new report module
+
+See [`src/orcheval/report/README.md`](src/orcheval/report/README.md). Write a pure function `your_report(trace: Trace) -> YourReport` with frozen Pydantic output models, add it to `FullReport`, and export from `__init__.py`.
 
 ## Known Limitations
 
