@@ -191,7 +191,7 @@ All export methods that accept a bare filename (e.g. `"trace.html"`) write to th
 Open `orcheval_outputs/trace.html` in any browser.
 
 
-https://github.com/user-attachments/assets/863ee0b1-7172-4a88-b659-66129e1d3c16
+https://github.com/user-attachments/assets/04f69cc1-c911-4259-b108-fc323852031c
 
 
 ## Text Digest
