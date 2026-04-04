@@ -65,7 +65,7 @@ def _build_model_usage(
 
     costs = [c[2] for c in calls if c[2] is not None]
     total_cost = sum(costs) if costs else None
-    avg_cost = total_cost / len(costs) if costs else None
+    avg_cost = total_cost / len(costs) if total_cost is not None else None
 
     durations = [c[3] for c in calls if c[3] is not None]
     avg_duration = sum(durations) / len(durations) if durations else None

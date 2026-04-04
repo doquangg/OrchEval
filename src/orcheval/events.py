@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
@@ -122,7 +122,7 @@ class PassBoundary(Event):
     @classmethod
     def _coerce_metric_ints(cls, v: Any) -> dict[str, Any]:
         if not isinstance(v, dict):
-            return v
+            return cast("dict[str, Any]", v)
         _INT_KEYS = {"violations_found", "rows_remaining", "steps_executed"}
         out = dict(v)
         for key in _INT_KEYS:

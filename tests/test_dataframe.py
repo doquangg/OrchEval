@@ -9,7 +9,6 @@ import pytest
 
 pd = pytest.importorskip("pandas")
 
-from orcheval.export.dataframe import ALL_COLUMNS  # noqa: E402
 from orcheval.events import (  # noqa: E402
     AgentMessage,
     ErrorEvent,
@@ -20,6 +19,7 @@ from orcheval.events import (  # noqa: E402
     RoutingDecision,
     ToolCall,
 )
+from orcheval.export.dataframe import ALL_COLUMNS  # noqa: E402
 from orcheval.trace import Trace  # noqa: E402
 
 from .conftest import BASE_TIME, TRACE_ID  # noqa: E402

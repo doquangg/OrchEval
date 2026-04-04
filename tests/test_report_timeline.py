@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from orcheval.events import NodeEntry, NodeExit
+from orcheval.events import NodeEntry
 from orcheval.report.timeline import TimelineReport, timeline_report
 from orcheval.trace import Trace
 

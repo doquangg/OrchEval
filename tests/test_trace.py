@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
+from orcheval._io import DEFAULT_OUTPUT_DIR
 from orcheval.events import (
     AgentMessage,
     ErrorEvent,
@@ -18,7 +19,6 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval._io import DEFAULT_OUTPUT_DIR
 from orcheval.trace import NodeInvocation, Trace
 
 TRACE_ID = "test-trace-container"
@@ -37,7 +37,9 @@ class TestTraceBasics:
         assert trace[0].node_name == "b"
         assert trace[1].node_name == "a"
 
-    @pytest.mark.parametrize("events,expected", [([], False), (None, True)], ids=["empty", "nonempty"])
+    @pytest.mark.parametrize(
+        "events,expected", [([], False), (None, True)], ids=["empty", "nonempty"]
+    )
     def test_bool(self, events: list | None, expected: bool, sample_trace: Trace) -> None:
         trace = Trace(events=events) if events is not None else sample_trace
         assert bool(trace) is expected
@@ -414,7 +416,9 @@ class TestOutputDirectory:
         assert out.exists()
         assert out.read_text(encoding="utf-8") == result
 
-    def test_relative_path_with_dir_used_as_is(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
+    def test_relative_path_with_dir_used_as_is(
+        self, simple_trace: Trace, tmp_path, monkeypatch
+    ) -> None:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "subdir").mkdir()
         simple_trace.to_json("subdir/trace.json")
@@ -437,7 +441,7 @@ class TestFromJsonFile:
 
     def test_trace_from_json_file(self, simple_trace: Trace, tmp_path) -> None:
         json_path = tmp_path / "trace.json"
-        json_str = simple_trace.to_json(str(json_path))
+        simple_trace.to_json(str(json_path))
         loaded = Trace.from_json_file(json_path)
         assert loaded.trace_id == simple_trace.trace_id
         assert len(loaded) == len(simple_trace)
@@ -454,7 +458,7 @@ class TestFromJsonFile:
         assert (tmp_path / DEFAULT_OUTPUT_DIR / "out.html").exists()
 
     def test_html_from_files_with_report(self, simple_trace: Trace, tmp_path, monkeypatch) -> None:
-        from orcheval import FullReport, html_from_files, report
+        from orcheval import html_from_files, report
 
         monkeypatch.chdir(tmp_path)
         trace_path = tmp_path / "trace.json"

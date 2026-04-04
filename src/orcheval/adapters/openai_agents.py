@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+import warnings
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,9 +30,7 @@ from orcheval.events import (
     RoutingDecision,
     ToolCall,
 )
-from orcheval.sanitize import compute_state_diff, sanitize_outputs, sanitize_state
-
-import warnings
+from orcheval.sanitize import compute_state_diff, sanitize_outputs
 
 
 def _ensure_openai_agents() -> None:
@@ -114,7 +113,7 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
         TracingProcessor,
     )
 
-    class _Processor(TracingProcessor):  # type: ignore[misc]
+    class _Processor(TracingProcessor):
         """Internal tracing processor.  Not part of the public API."""
 
         def __init__(self, adapter: OpenAIAgentsAdapter) -> None:
@@ -257,7 +256,8 @@ def _create_tracing_processor(adapter: OpenAIAgentsAdapter) -> Any:
                     # for this target — suppress the inferred duplicate.
                     self._handoff_targets.discard(agent_name)
                 else:
-                    # node_name == source_node by design: the decision belongs to the node making the routing choice
+                    # node_name == source_node by design: the decision belongs to
+                    # the node making the routing choice
                     routing_event = RoutingDecision(
                         trace_id=self._adapter.trace_id,
                         span_id=self._make_span_id(),

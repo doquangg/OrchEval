@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from orcheval.events import ErrorEvent, LLMCall, NodeEntry, NodeExit, RoutingDecision
+from orcheval.events import ErrorEvent, NodeEntry, NodeExit, RoutingDecision
 from orcheval.trace import Trace
 
 from .conftest import BASE_TIME, TRACE_ID

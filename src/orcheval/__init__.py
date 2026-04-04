@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+from orcheval._io import DEFAULT_OUTPUT_DIR
 from orcheval.adapters.base import BaseAdapter
 from orcheval.adapters.manual import ManualAdapter
 from orcheval.collection import (
@@ -31,7 +34,6 @@ from orcheval.events import (
     ToolCall,
 )
 from orcheval.report import FullReport, RunComparison, compare_runs, report
-from orcheval._io import DEFAULT_OUTPUT_DIR
 from orcheval.trace import NodeInvocation, Trace
 
 __version__ = "0.1.0"

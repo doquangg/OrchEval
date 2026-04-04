@@ -183,7 +183,8 @@ def _create_callback_handler(adapter: LangGraphAdapter) -> Any:
                         self._adapter._infer_routing
                         and self._last_exited_node is not None
                     ):
-                        # node_name == source_node by design: the decision belongs to the node making the routing choice
+                        # node_name == source_node by design: the decision belongs to
+                        # the node making the routing choice
                         routing_event = RoutingDecision(
                             trace_id=self._adapter.trace_id,
                             span_id=self._make_span_id(),

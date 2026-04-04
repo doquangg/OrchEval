@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from orcheval import Trace, Tracer
+from orcheval import Tracer
 from orcheval.adapters.base import BaseAdapter
 from orcheval.adapters.manual import ManualAdapter
 

@@ -7,19 +7,12 @@ from datetime import timedelta
 import pytest
 
 from orcheval.collection import (
-    CollectionSummary,
-    ExecutionShape,
-    NodeStats,
-    PercentileStats,
     TraceCollection,
-    TraceOutlier,
-    TrendResult,
 )
-from orcheval.events import ErrorEvent, LLMCall, NodeEntry, NodeExit, ToolCall
+from orcheval.events import ErrorEvent, LLMCall, NodeEntry, NodeExit
 from orcheval.trace import Trace
 
-from .conftest import BASE_TIME, _ts
-
+from .conftest import BASE_TIME
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -97,7 +90,9 @@ def collection_traces() -> list[Trace]:
         _make_trace("t2", ["agent", "summarizer"], cost=0.012, base_offset=10),
         _make_trace("t3", ["agent", "summarizer"], cost=0.100, base_offset=20),
         _make_trace("t4", ["planner", "executor", "summarizer"], cost=0.020, base_offset=30),
-        _make_trace("t5", ["agent", "validator"], cost=0.005, base_offset=40, error_node="validator"),
+        _make_trace(
+            "t5", ["agent", "validator"], cost=0.005, base_offset=40, error_node="validator"
+        ),
     ]
 
 

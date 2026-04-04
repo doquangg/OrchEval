@@ -30,14 +30,51 @@ class TestEventConstruction:
         [
             (NodeEntry, {"node_name": "agent"}, "node_entry"),
             (NodeExit, {"node_name": "agent", "duration_ms": 1500.0}, "node_exit"),
-            (LLMCall, {"model": "gpt-4o", "input_tokens": 100, "output_tokens": 50, "cost": 0.003}, "llm_call"),
-            (ToolCall, {"tool_name": "search", "tool_input": {"query": "test"}, "tool_output": "results"}, "tool_call"),
-            (RoutingDecision, {"source_node": "router", "target_node": "agent", "decision_context": {"score": 0.9}}, "routing_decision"),
-            (AgentMessage, {"sender": "agent_1", "receiver": "agent_2", "content_summary": "Passing results"}, "agent_message"),
-            (ErrorEvent, {"error_type": "ValueError", "error_message": "Something went wrong", "stacktrace": "Traceback..."}, "error_event"),
-            (PassBoundary, {"pass_number": 1, "direction": "enter", "metrics_snapshot": {"violation_count": 5}}, "pass_boundary"),
+            (
+                LLMCall,
+                {"model": "gpt-4o", "input_tokens": 100, "output_tokens": 50, "cost": 0.003},
+                "llm_call",
+            ),
+            (
+                ToolCall,
+                {"tool_name": "search", "tool_input": {"query": "test"}, "tool_output": "results"},
+                "tool_call",
+            ),
+            (
+                RoutingDecision,
+                {
+                    "source_node": "router", "target_node": "agent",
+                    "decision_context": {"score": 0.9},
+                },
+                "routing_decision",
+            ),
+            (
+                AgentMessage,
+                {"sender": "agent_1", "receiver": "agent_2", "content_summary": "Passing results"},
+                "agent_message",
+            ),
+            (
+                ErrorEvent,
+                {
+                    "error_type": "ValueError",
+                    "error_message": "Something went wrong",
+                    "stacktrace": "Traceback...",
+                },
+                "error_event",
+            ),
+            (
+                PassBoundary,
+                {
+                    "pass_number": 1, "direction": "enter",
+                    "metrics_snapshot": {"violation_count": 5},
+                },
+                "pass_boundary",
+            ),
         ],
-        ids=["node_entry", "node_exit", "llm_call", "tool_call", "routing_decision", "agent_message", "error_event", "pass_boundary"],
+        ids=[
+            "node_entry", "node_exit", "llm_call", "tool_call",
+            "routing_decision", "agent_message", "error_event", "pass_boundary",
+        ],
     )
     def test_event_construction(self, cls: type, kwargs: dict, expected_type: str) -> None:
         e = cls(trace_id=TRACE_ID, **kwargs)

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from orcheval.events import LLMCall, NodeEntry, NodeExit, ToolCall
+from orcheval.events import LLMCall, NodeExit, ToolCall
 
 if TYPE_CHECKING:
     from orcheval.trace import NodeInvocation, Trace
@@ -122,10 +122,10 @@ def _build_invocation_map(
             _, inv_idx = span_to_inv[call.parent_span_id]
             llm_per_inv[inv_idx].append(call)
 
-    for call in all_tool:
-        if call.parent_span_id and call.parent_span_id in span_to_inv:
-            _, inv_idx = span_to_inv[call.parent_span_id]
-            tool_per_inv[inv_idx].append(call)
+    for tool_call in all_tool:
+        if tool_call.parent_span_id and tool_call.parent_span_id in span_to_inv:
+            _, inv_idx = span_to_inv[tool_call.parent_span_id]
+            tool_per_inv[inv_idx].append(tool_call)
 
     # Build node-level groupings: node_name -> [invocation_0_calls, invocation_1_calls, ...]
     llm_by_node: dict[str, list[list[LLMCall]]] = {}
@@ -403,9 +403,9 @@ def _build_node_summaries(
     for c in inv_map.all_llm:
         if c.node_name:
             node_names.add(c.node_name)
-    for c in inv_map.all_tool:
-        if c.node_name:
-            node_names.add(c.node_name)
+    for tc in inv_map.all_tool:
+        if tc.node_name:
+            node_names.add(tc.node_name)
     inv_counts: dict[str, int] = defaultdict(int)
     for inv in invocations:
         inv_counts[inv.node_name] += 1
@@ -424,8 +424,8 @@ def _build_node_summaries(
         if c.output_tokens is not None:
             output_tokens_by_node[node].append(c.output_tokens)
 
-    for c in inv_map.all_tool:
-        node = c.node_name or "<unknown>"
+    for tc in inv_map.all_tool:
+        node = tc.node_name or "<unknown>"
         tool_counts[node] += 1
 
     summaries: list[NodeLLMSummary] = []
@@ -471,7 +471,10 @@ def llm_patterns_report(trace: Trace) -> LLMPatternsReport:
     patterns.extend(_detect_output_not_utilized(trace, inv_map, invocations))
 
     # Count unique nodes that have LLM or tool calls
-    nodes_analyzed = len({s.node_name for s in summaries if s.total_llm_calls > 0 or s.total_tool_calls > 0})
+    nodes_analyzed = len({
+        s.node_name for s in summaries
+        if s.total_llm_calls > 0 or s.total_tool_calls > 0
+    })
 
     return LLMPatternsReport(
         patterns=patterns,

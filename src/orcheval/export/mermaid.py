@@ -50,7 +50,7 @@ def build_mermaid(trace: Trace) -> str:
         for rd in routing_decisions:
             edge_counts[(rd.source_node, rd.target_node)] += 1
     else:
-        for src, tgt in zip(sequence, sequence[1:]):
+        for src, tgt in zip(sequence, sequence[1:], strict=False):
             edge_counts[(src, tgt)] += 1
 
     # --- Collect all node names that appear (in nodes or edges) ---

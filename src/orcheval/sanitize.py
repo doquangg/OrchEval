@@ -78,7 +78,7 @@ def _sanitize_value(
     # Handle numpy/pandas types - convert to Python primitives
     try:
         import numpy as np
-        import pandas as pd
+        import pandas as pd  # type: ignore[import-untyped]
 
         # Handle pandas Timestamp (before scalar checks since it's special)
         if isinstance(value, pd.Timestamp):
@@ -144,7 +144,7 @@ def _sanitize_value(
 
     # pandas DataFrames — shape + columns + head preview
     try:
-        import pandas as pd  # type: ignore[import-untyped]
+        import pandas as pd
 
         if isinstance(value, pd.DataFrame):
             head_records = value.head(3).to_dict(orient="records")

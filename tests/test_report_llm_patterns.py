@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-import pytest
-
 from orcheval.events import LLMCall, NodeEntry, NodeExit, ToolCall
 from orcheval.report import FullReport, report
 from orcheval.report.llm_patterns import (
-    LLMPattern,
     LLMPatternsReport,
-    NodeLLMSummary,
     llm_patterns_report,
 )
 from orcheval.trace import Trace
 
-from .conftest import BASE_TIME, TRACE_ID, _ts
-
+from .conftest import TRACE_ID, _ts
 
 # ---------------------------------------------------------------------------
 # Basics
@@ -35,7 +30,9 @@ class TestLLMPatternsReportBasic:
     def test_no_llm_calls(self) -> None:
         trace = Trace(events=[
             NodeEntry(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(0), node_name="agent"),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(1), node_name="agent", duration_ms=1000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(1),
+                node_name="agent", duration_ms=1000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         assert result.patterns == []
@@ -57,7 +54,9 @@ class TestLLMPatternsReportBasic:
                 timestamp=_ts(1), node_name="worker",
                 model="gpt-4o", input_tokens=100, output_tokens=50,
             ),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2), node_name="worker", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2),
+                node_name="worker", duration_ms=2000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         growth = [p for p in result.patterns if p.pattern_type == "prompt_growth"]
@@ -79,7 +78,9 @@ class TestLLMPatternsReportBasic:
                 timestamp=_ts(2), node_name="agent",
                 model="gpt-4o", input_tokens=80, output_tokens=30,
             ),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3), node_name="agent", duration_ms=3000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3),
+                node_name="agent", duration_ms=3000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         assert result.total_llm_calls == 2
@@ -112,11 +113,15 @@ class TestPromptGrowthDetection:
             NodeEntry(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(0), node_name="x"),
             LLMCall(trace_id=TRACE_ID, span_id="l1", parent_span_id="s1",
                     timestamp=_ts(1), node_name="x", input_tokens=100, output_tokens=50),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2),
+                node_name="x", duration_ms=2000.0),
             NodeEntry(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(3), node_name="x"),
             LLMCall(trace_id=TRACE_ID, span_id="l2", parent_span_id="s2",
                     timestamp=_ts(4), node_name="x", input_tokens=140, output_tokens=50),
-            NodeExit(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5),
+                node_name="x", duration_ms=2000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         growth = [p for p in result.patterns if p.pattern_type == "prompt_growth"]
@@ -128,11 +133,15 @@ class TestPromptGrowthDetection:
             NodeEntry(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(0), node_name="x"),
             LLMCall(trace_id=TRACE_ID, span_id="l1", parent_span_id="s1",
                     timestamp=_ts(1), node_name="x", input_tokens=None, output_tokens=50),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2),
+                node_name="x", duration_ms=2000.0),
             NodeEntry(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(3), node_name="x"),
             LLMCall(trace_id=TRACE_ID, span_id="l2", parent_span_id="s2",
                     timestamp=_ts(4), node_name="x", input_tokens=200, output_tokens=50),
-            NodeExit(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5),
+                node_name="x", duration_ms=2000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         # Only 1 valid token count, so no growth comparison possible
@@ -160,12 +169,16 @@ class TestRepeatedOutputDetection:
             LLMCall(trace_id=TRACE_ID, span_id="l1", parent_span_id="s1",
                     timestamp=_ts(1), node_name="x",
                     prompt_summary="prompt A", response_summary="output A"),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2),
+                node_name="x", duration_ms=2000.0),
             NodeEntry(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(3), node_name="x"),
             LLMCall(trace_id=TRACE_ID, span_id="l2", parent_span_id="s2",
                     timestamp=_ts(4), node_name="x",
                     prompt_summary="prompt B", response_summary="output B"),
-            NodeExit(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5),
+                node_name="x", duration_ms=2000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         repeated = [p for p in result.patterns if p.pattern_type == "repeated_output"]
@@ -178,12 +191,16 @@ class TestRepeatedOutputDetection:
             LLMCall(trace_id=TRACE_ID, span_id="l1", parent_span_id="s1",
                     timestamp=_ts(1), node_name="x",
                     prompt_summary="same prompt", response_summary="same output"),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2),
+                node_name="x", duration_ms=2000.0),
             NodeEntry(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(3), node_name="x"),
             LLMCall(trace_id=TRACE_ID, span_id="l2", parent_span_id="s2",
                     timestamp=_ts(4), node_name="x",
                     prompt_summary="same prompt", response_summary="same output"),
-            NodeExit(trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s2", timestamp=_ts(5),
+                node_name="x", duration_ms=2000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         repeated = [p for p in result.patterns if p.pattern_type == "repeated_output"]
@@ -214,7 +231,9 @@ class TestRedundantToolCallDetection:
             ToolCall(trace_id=TRACE_ID, span_id="t2", parent_span_id="s1",
                      timestamp=_ts(2), node_name="x",
                      tool_name="search", tool_input={"query": "beta"}),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3), node_name="x", duration_ms=3000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3),
+                node_name="x", duration_ms=3000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         redundant = [p for p in result.patterns if p.pattern_type == "redundant_tool_call"]
@@ -242,7 +261,9 @@ class TestSystemMessageVariance:
                     timestamp=_ts(1), node_name="x", system_message="You are helpful."),
             LLMCall(trace_id=TRACE_ID, span_id="l2", parent_span_id="s1",
                     timestamp=_ts(2), node_name="x", system_message="You are helpful."),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3), node_name="x", duration_ms=3000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3),
+                node_name="x", duration_ms=3000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         variance = [p for p in result.patterns if p.pattern_type == "system_message_variance"]
@@ -255,7 +276,9 @@ class TestSystemMessageVariance:
                     timestamp=_ts(1), node_name="x", system_message=None),
             LLMCall(trace_id=TRACE_ID, span_id="l2", parent_span_id="s1",
                     timestamp=_ts(2), node_name="x", system_message=None),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3), node_name="x", duration_ms=3000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(3),
+                node_name="x", duration_ms=3000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         variance = [p for p in result.patterns if p.pattern_type == "system_message_variance"]
@@ -289,7 +312,9 @@ class TestOutputNotUtilized:
                     timestamp=_ts(1), node_name="x",
                     response_summary="some output",
                     output_message={"role": "ai", "content": "some output"}),
-            NodeExit(trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2), node_name="x", duration_ms=2000.0),
+            NodeExit(
+                trace_id=TRACE_ID, span_id="s1", timestamp=_ts(2),
+                node_name="x", duration_ms=2000.0),
         ], trace_id=TRACE_ID)
         result = llm_patterns_report(trace)
         unused = [p for p in result.patterns if p.pattern_type == "output_not_utilized"]

@@ -28,7 +28,8 @@ class ManualAdapter(BaseAdapter):
 
         adapter = ManualAdapter(trace_id="my-trace")
         adapter.node_entry("agent_1")
-        adapter.llm_call(node_name="agent_1", model="gpt-4o", input_tokens=100, output_tokens=50, cost=0.003)
+        adapter.llm_call(node_name="agent_1", model="gpt-4o",
+                         input_tokens=100, output_tokens=50, cost=0.003)
         adapter.node_exit("agent_1", duration_ms=1500.0)
         events = adapter.get_events()
     """
@@ -100,7 +101,9 @@ class ManualAdapter(BaseAdapter):
         self._emit(event)
         return event
 
-    def pass_boundary(self, pass_number: int, direction: Literal["enter", "exit"], **kwargs: Any) -> PassBoundary:
+    def pass_boundary(
+        self, pass_number: int, direction: Literal["enter", "exit"], **kwargs: Any
+    ) -> PassBoundary:
         event = PassBoundary(
             trace_id=self._trace_id,
             pass_number=pass_number,

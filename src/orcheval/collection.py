@@ -9,9 +9,9 @@ from __future__ import annotations
 import logging
 import statistics as stats_mod
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime  # noqa: TC003
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -428,10 +428,7 @@ class TraceCollection:
 
         # Compute change percentage
         if first_mean == 0:
-            if second_mean == 0:
-                pct_change = 0.0
-            else:
-                pct_change = float("inf")
+            pct_change = 0.0 if second_mean == 0 else float("inf")
         else:
             pct_change = (second_mean - first_mean) / abs(first_mean)
 
