@@ -93,3 +93,8 @@ addopts = "-ra -q --strict-markers"
 markers = [
     "integration: marks tests requiring optional dependencies (langgraph, openai_agents)",
 ]
+
+[project.urls]
+Homepage = "https://github.com/doquangg/OrchEval"
+Repository = "https://github.com/doquangg/OrchEval"
+Issues = "https://github.com/doquangg/OrchEval/issues"
